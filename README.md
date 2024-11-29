@@ -1,5 +1,5 @@
 # [AivisSpeech-linux-gui-unofficial](https://hinoki-cypress.github.io/AivisSpeech-linux-gui-unofficial/)
-日本語:これはAivisSpeechの**「非公式」**LinuxGUI版です。AivisSpeech様とVOICEVOX様に最大の敬意を表します。このプロジェクトが原因の不具合があればこちらに報告し、AivisSpeech様にご報告されるのはおやめください。AivisSpeechが原因の不具合であればAvisSpeech様にご報告ください。
+日本語:これはAivisSpeechの_**「非公式」**_LinuxGUI版です。AivisSpeech様とVOICEVOX様に最大の敬意を表します。このプロジェクトが原因の不具合があればこちらに報告し、AivisSpeech様にご報告されるのはおやめください。AivisSpeechが原因の不具合であればAvisSpeech様にご報告ください。
 
 English:This is the **unofficial** Linux GUI version of AivisSpeech. I would like to express my utmost respect to AivisSpeech and VOICEVOX. If you have any problems caused by this project, please report them here and do not report them to AivisSpeech. If the problem is caused by AivisSpeech, please report it to AvisSpeech.
 # [ソースコード＆リリース SourceCode&Release](https://https://github.com/hinoki-cypress/AivisSpeech-linux-gui-unofficial)
