@@ -3,7 +3,9 @@
 
 English:This is the **unofficial** Linux GUI version of AivisSpeech. I would like to express my utmost respect to AivisSpeech and VOICEVOX. If you have any problems caused by this project, please report them here and do not report them to AivisSpeech. If the problem is caused by AivisSpeech, please report it to AvisSpeech.
 
-**[ソースコード＆リリース SourceCode&Release](https://github.com/hinoki-cypress/AivisSpeech-linux-gui-unofficial)**
+**[ソースコード＆リリース SourceCode&Release](https://github.com/ebi-chiri-oishi/AivisSpeech-linux-gui-unofficial)**
+
+**[Github pages](https://ebi-chiri-oishi.github.io/AivisSpeech-linux-gui-unofficial)**
 
 # AivisSpeech
 
