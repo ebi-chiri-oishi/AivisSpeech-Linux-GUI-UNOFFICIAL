@@ -1,4 +1,5 @@
 <link rel="canonical" href="https://ebi-chiri-oishi.github.io/AivisSpeech-linux-gui-unofficial">
+
 # [AivisSpeech-linux-gui-unofficial](https://github.com/ebi-chiri-oishi/AivisSpeech-linux-gui-unofficial/)
 日本語:これはAivisSpeechの「非公式」LinuxGUI版です。AivisSpeech様とVOICEVOX様に最大の敬意を表します。このプロジェクトが原因の不具合があればこちらに報告し、AivisSpeech様にご報告されるのはおやめください。ただしAivisSpeechが原因の不具合であればAvisSpeech様にご報告ください。
 
