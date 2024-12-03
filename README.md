@@ -8,7 +8,7 @@ English:This is the **unofficial** Linux GUI version of AivisSpeech. I would lik
 **[リリース Release](https://github.com/ebi-chiri-oishi/AivisSpeech-Linux-GUI-UNOFFICIAL/releases/tag/release)**
 
 **[Github pages](https://ebi-chiri-oishi.github.io/AivisSpeech-Linux-GUI-UNOFFICIAL/)**
-<link rel="canonical" href="https://ebi-chiri-oishi.github.io/AivisSpeech-linux-gui-unofficial">
+<link rel="canonical" href="https://ebi-chiri-oishi.github.io/AivisSpeech-Linux-GUI-UNOFFICIAL/">
 下記にAivisSpeech様、VOICEVOX様のREADMEを記載しますが、このプロジェクトにも通用することを保証するものではありません。
 
 The READMEs of AivisSpeech and VOICEVOX are listed below, but we do not guarantee that they will apply to this project.
