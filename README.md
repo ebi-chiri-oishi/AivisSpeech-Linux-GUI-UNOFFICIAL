@@ -1,13 +1,13 @@
-# [AivisSpeech-linux-gui-unofficial](https://github.com/ebi-chiri-oishi/AivisSpeech-linux-gui-unofficial/)
+# [AivisSpeech-Linux-GUI-UNOFFICIAL](https://github.com/ebi-chiri-oishi/AivisSpeech-Linux-GUI-UNOFFICIAL/)
 日本語:これはAivisSpeechの「非公式」LinuxGUI版です。AivisSpeech様とVOICEVOX様に最大の敬意を表します。このプロジェクトが原因の不具合があればこちらに報告し、AivisSpeech様にご報告されるのはおやめください。ただしAivisSpeechが原因の不具合であればAvisSpeech様にご報告ください。
 
 English:This is the **unofficial** Linux GUI version of AivisSpeech. I would like to express my utmost respect to AivisSpeech and VOICEVOX. If you have any problems caused by this project, please report them here and do not report them to AivisSpeech. If the problem is caused by AivisSpeech, please report it to AvisSpeech.
 
-**[ソースコード SourceCode](https://github.com/ebi-chiri-oishi/AivisSpeech-linux-gui-unofficial)**
+**[ソースコード SourceCode](https://github.com/ebi-chiri-oishi/AivisSpeech-Linux-GUI-UNOFFICIAL/)**
 
-**[リリース Release](https://github.com/ebi-chiri-oishi/AivisSpeech-linux-gui-unofficial/releases/tag/release)**
+**[リリース Release](https://github.com/ebi-chiri-oishi/AivisSpeech-Linux-GUI-UNOFFICIAL/releases/tag/release)**
 
-**[Github pages](https://ebi-chiri-oishi.github.io/AivisSpeech-linux-gui-unofficial)**
+**[Github pages](https://ebi-chiri-oishi.github.io/AivisSpeech-Linux-GUI-UNOFFICIAL/)**
 <link rel="canonical" href="https://ebi-chiri-oishi.github.io/AivisSpeech-linux-gui-unofficial">
 下記にAivisSpeech様、VOICEVOX様のREADMEを記載しますが、このプロジェクトにも適用されることを保証するものではありません。
 
