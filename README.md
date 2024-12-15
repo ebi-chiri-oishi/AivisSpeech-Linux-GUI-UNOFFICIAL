@@ -4,6 +4,8 @@
 
 [ソースコード SourceCode](https://github.com/ebi-chiri-oishi/AivisSpeech-Linux-GUI-UNOFFICIAL/releases/tag/release)
 
+[GithubPages](https://ebi-chiri-oishi.github.io/AivisSpeech-Linux-GUI-UNOFFICIAL)
+
 このプロジェクトはAivisSpeechの**非公式**LinuxGUI版であり、AivisSpeech様、VOICEVOX様とは一切関係がありません。不具合がAivisSpeech様、VOICEVOX様の由来ではない場合は必ずこちらに報告するようお願いします。
 また、以下にAivisSpeech様、VOICEVOX様のREADMEを継承させていただいていますが、本プロジェクトでも通用することを保証するものではありません。
 
