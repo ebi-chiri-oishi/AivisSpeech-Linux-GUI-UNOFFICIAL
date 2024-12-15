@@ -1,4 +1,14 @@
+# AivisSpeech-Linux-GUI-UNOFFICIAL
 
+[リリース Releases](https://github.com/ebi-chiri-oishi/AivisSpeech-Linux-GUI-UNOFFICIAL/releases/tag/release)
+
+[ソースコード SourceCode](https://github.com/ebi-chiri-oishi/AivisSpeech-Linux-GUI-UNOFFICIAL/releases/tag/release)
+
+このプロジェクトはAivisSpeechの**非公式**LinuxGUI版であり、AivisSpeech様、VOICEVOX様とは一切関係がありません。不具合がAivisSpeech様、VOICEVOX様の由来ではない場合は必ずこちらに報告するようお願いします。
+また、以下にAivisSpeech様、VOICEVOX様のREADMEを継承させていただいていますが、本プロジェクトでも通用することを保証するものではありません。
+
+This project is an **unofficial** Linux GUI version of AivisSpeech, and is in no way related to AivisSpeech or VOICEVOX. If the problem is not caused by AivisSpeech or VOICEVOX, please be sure to report it here.
+In addition, we have inherited the README from AivisSpeech and VOICEVOX below, but we do not guarantee that it will work with this project.
 # AivisSpeech
 
 [![Releases](https://img.shields.io/github/v/release/Aivis-Project/AivisSpeech?label=Release)](https://github.com/Aivis-Project/AivisSpeech/releases)
