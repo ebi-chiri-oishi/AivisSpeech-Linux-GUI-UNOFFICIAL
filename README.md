@@ -7,6 +7,7 @@
 [GithubPages](https://ebi-chiri-oishi.github.io/AivisSpeech-Linux-GUI-UNOFFICIAL)
 # ビルド
 AivisSpeech様のビルド方法と基本的には同じですが、nodejsの22.12.0 ltsで対応を確認しております。
+
 It is basically the same as AivisSpeech's build, but we have confirmed that it is compatible with nodejs 22.12.0 lts.
 
 # 注意事項
