@@ -6,9 +6,17 @@
 
 [GithubPages](https://ebi-chiri-oishi.github.io/AivisSpeech-Linux-GUI-UNOFFICIAL)
 # ビルド
-AivisSpeech様のビルド方法と基本的には同じですが、nodejsの22.12.0 ltsで対応を確認しております。
+上流のビルド方法と基本的には同じですが、nodejsの22.12.0 ltsで対応を確認しております。
 
-It is basically the same as AivisSpeech's build, but we have confirmed that it is compatible with nodejs 22.12.0 lts.
+masterブランチをmainに名称変更していますが内容は同じです。
+
+また、Engineは同梱していません。成果物のディレクトリから```./Linux-x64/run```となるように置いてください。
+
+The build method is basically the same as the upstream one, but we have confirmed that it is compatible with nodejs 22.12.0 lts.
+
+The master branch has been renamed to main, but the content is the same.
+
+Also, Engine is not included. Please place it so that it is ``./Linux-x64/run``` in the deliverable directory.
 
 # 注意事項
 このプロジェクトはAivisSpeechの**非公式**LinuxGUI版であり、AivisSpeech様、VOICEVOX様とは一切関係がありません。不具合がAivisSpeech様、VOICEVOX様の由来ではない場合は必ずこちらに報告するようお願いします。
