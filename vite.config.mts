@@ -8,13 +8,19 @@ import vue from "@vitejs/plugin-vue";
 import checker from "vite-plugin-checker";
 import { BuildOptions, defineConfig, loadEnv, Plugin } from "vite";
 import { quasar } from "@quasar/vite-plugin";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
+import { z } from "zod";
 
 const isElectron = process.env.VITE_TARGET === "electron";
 const isBrowser = process.env.VITE_TARGET === "browser";
 
 export default defineConfig((options) => {
+  const mode = z
+    .enum(["development", "test", "production"])
+    .parse(options.mode);
+
   const packageName = process.env.npm_package_name;
-  const env = loadEnv(options.mode, import.meta.dirname);
+  const env = loadEnv(mode, import.meta.dirname);
   if (!packageName?.startsWith(env.VITE_APP_NAME)) {
     throw new Error(
       `"package.json"の"name":"${packageName}"は"VITE_APP_NAME":"${env.VITE_APP_NAME}"から始まっている必要があります`,
@@ -32,19 +38,19 @@ export default defineConfig((options) => {
     throw new Error(`Unsupported platform: ${process.platform}`);
   }
   process.env.VITE_7Z_BIN_NAME =
-    (options.mode === "development"
+    (mode !== "production"
       ? path.join(import.meta.dirname, "vendored", "7z") + path.sep
       : "") + sevenZipBinName;
   process.env.VITE_APP_VERSION = process.env.npm_package_version;
 
-  const shouldEmitSourcemap = ["development", "test"].includes(options.mode);
+  const shouldEmitSourcemap = ["development", "test"].includes(mode);
   const sourcemap: BuildOptions["sourcemap"] = shouldEmitSourcemap
-    ? "inline"
-    : false;
+    ? "inline"  // 開発時はインライン
+    : true;  // 本番時は別ファイル
 
   // ref: electronの起動をスキップしてデバッグ起動を軽くする
   const skipLahnchElectron =
-    options.mode === "test" || process.env.SKIP_LAUNCH_ELECTRON === "1";
+    mode === "test" || process.env.SKIP_LAUNCH_ELECTRON === "1";
 
   return {
     root: path.resolve(import.meta.dirname, "src"),
@@ -71,7 +77,7 @@ export default defineConfig((options) => {
     plugins: [
       vue(),
       quasar({ autoImportComponentCase: "pascal" }),
-      options.mode !== "test" &&
+      mode !== "test" &&
         checker({
           overlay: false,
           eslint: {
@@ -119,6 +125,12 @@ export default defineConfig((options) => {
             },
           },
         ]),
+        sentryVitePlugin({
+          authToken: process.env.SENTRY_AUTH_TOKEN,
+          org: "jpchain",
+          project: "aivisspeech",
+          telemetry: false,
+        }),
       ],
       isBrowser && injectBrowserPreloadPlugin(),
     ],
@@ -146,7 +158,7 @@ const injectBrowserPreloadPlugin = (): Plugin => {
       handler: (html: string) =>
         html.replace(
           "<!-- %BROWSER_PRELOAD% -->",
-          `<script type="module" src="./backend/browser/preload.ts"></script>`,
+          "<script type=\"module\" src=\"./backend/browser/preload.ts\"></script>",
         ),
     },
   };

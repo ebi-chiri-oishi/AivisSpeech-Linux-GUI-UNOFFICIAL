@@ -1,13 +1,13 @@
 import { SettingStoreState, SettingStoreTypes } from "./type";
 import { createUILockAction } from "./ui";
 import { createPartialStore } from "./vuex";
+import { useAnalytics } from "@/composables/useAnalytics";
 import { themes } from "@/domain/theme";
 import {
   showAlertDialog,
   showQuestionDialog,
 } from "@/components/Dialog/Dialog";
 import {
-  HotkeySettingType,
   SavingSetting,
   ExperimentalSettingType,
   ToolbarSettingType,
@@ -16,6 +16,7 @@ import {
   RootMiscSettingType,
 } from "@/type/preload";
 import { IsEqual } from "@/type/utility";
+import { HotkeySettingType } from "@/domain/hotkeyAction";
 
 export const settingStoreState: SettingStoreState = {
   openedEditor: undefined,
@@ -218,15 +219,15 @@ export const settingStore = createPartialStore<SettingStoreTypes>({
 
   SET_ROOT_MISC_SETTING: {
     mutation(state, { key, value }) {
-      // Vuexの型処理でUnionが解かれてしまうのを迂回している
+      // @ts-expect-error Vuexの型処理でUnionが解かれてしまうのを迂回している
       // FIXME: このワークアラウンドをなくす
-      state[key as never] = value;
+      state[key] = value;
     },
     action({ mutations }, { key, value }) {
       void window.backend.setSetting(key, value);
-      // Vuexの型処理でUnionが解かれてしまうのを迂回している
+      // @ts-expect-error Vuexの型処理でUnionが解かれてしまうのを迂回している
       // FIXME: このワークアラウンドをなくす
-      mutations.SET_ROOT_MISC_SETTING({ key: key as never, value });
+      mutations.SET_ROOT_MISC_SETTING({ key, value });
     },
   },
 
@@ -256,11 +257,19 @@ export const settingStore = createPartialStore<SettingStoreTypes>({
     mutation(state, { acceptRetrieveTelemetry }) {
       state.acceptRetrieveTelemetry = acceptRetrieveTelemetry;
     },
-    action({ mutations }, { acceptRetrieveTelemetry }) {
+    action({ state, mutations }, { acceptRetrieveTelemetry }) {
+      /*
       window.dataLayer?.push({
         event: "updateAcceptRetrieveTelemetry",
         acceptRetrieveTelemetry: acceptRetrieveTelemetry == "Accepted",
       });
+      */
+      const currentAcceptRetrieveTelemetry = state.acceptRetrieveTelemetry;
+      if (acceptRetrieveTelemetry !== currentAcceptRetrieveTelemetry) {
+        void useAnalytics().trackEvent("aisp_accept_retrieve_telemetry_update", {
+          acceptRetrieveTelemetry: acceptRetrieveTelemetry == "Accepted",
+        });
+      }
       void window.backend.setSetting(
         "acceptRetrieveTelemetry",
         acceptRetrieveTelemetry,
@@ -273,11 +282,19 @@ export const settingStore = createPartialStore<SettingStoreTypes>({
     mutation(state, { acceptTerms }) {
       state.acceptTerms = acceptTerms;
     },
-    action({ mutations }, { acceptTerms }) {
+    action({ state, mutations }, { acceptTerms }) {
+      /*
       window.dataLayer?.push({
         event: "updateAcceptTerms",
         acceptTerms: acceptTerms == "Accepted",
       });
+      */
+      const currentAcceptTerms = state.acceptTerms;
+      if (acceptTerms !== currentAcceptTerms) {
+        void useAnalytics().trackEvent("aisp_accept_terms_update", {
+          acceptTerms: acceptTerms == "Accepted",
+        });
+      }
       void window.backend.setSetting("acceptTerms", acceptTerms);
       mutations.SET_ACCEPT_TERMS({ acceptTerms });
     },
@@ -361,7 +378,7 @@ export const settingStore = createPartialStore<SettingStoreTypes>({
         // 対応するGPUがない場合に変更を続行するか問う
         if (useGpu && !isAvailableGPUMode) {
           const result = await showQuestionDialog({
-            type: "warning",
+            type: "warning-light",
             title: "対応する GPU デバイスが見つかりません",
             message:
               "GPU モードの利用には対応する GPU デバイスが必要です。\n" +
@@ -386,7 +403,6 @@ export const settingStore = createPartialStore<SettingStoreTypes>({
         // FIXME: useGpu設定を保存してからエンジン起動を試すのではなく、逆にしたい
         if (!result.success && useGpu) {
           await showAlertDialog({
-            type: "error",
             title: "GPU モードに変更できませんでした",
             message:
               "GPU モードで音声合成エンジンを起動できなかったため、CPU モードに戻します。",

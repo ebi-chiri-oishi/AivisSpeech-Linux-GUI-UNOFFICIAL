@@ -14,7 +14,7 @@ import {
 import { createPartialStore } from "./vuex";
 import { ActivePointScrollMode } from "@/type/preload";
 import {
-  AlertDialogOptions,
+  MessageDialogOptions,
   ConfirmDialogOptions,
   WarningDialogOptions,
   LoadingScreenOption,
@@ -27,9 +27,11 @@ import {
   showAlertDialog,
   showConfirmDialog,
   showLoadingScreen,
+  showMessageDialog,
   showNotifyAndNotShowAgainButton,
   showWarningDialog,
 } from "@/components/Dialog/Dialog";
+import { objectEntries } from "@/helpers/typedEntries";
 
 export function createUILockAction<S, A extends ActionsBase, K extends keyof A>(
   action: (
@@ -179,15 +181,18 @@ export const uiStore = createPartialStore<UiStoreTypes>({
 
   SET_DIALOG_OPEN: {
     mutation(state, dialogState) {
-      for (const [key, value] of Object.entries(dialogState)) {
+      for (const [key, value] of objectEntries(dialogState)) {
         if (!(key in state)) {
           throw new Error(`Unknown dialog state: ${key}`);
+        }
+        if (value == undefined) {
+          throw new Error(`Invalid dialog state: ${key}`);
         }
         state[key] = value;
       }
     },
     async action({ state, mutations }, dialogState) {
-      for (const [key, value] of Object.entries(dialogState)) {
+      for (const [key, value] of objectEntries(dialogState)) {
         if (state[key] === value) continue;
 
         if (value) {
@@ -203,8 +208,14 @@ export const uiStore = createPartialStore<UiStoreTypes>({
     },
   },
 
+  SHOW_MESSAGE_DIALOG: {
+    action: createUILockAction(async (_, payload: MessageDialogOptions) => {
+      return await showMessageDialog(payload);
+    }),
+  },
+
   SHOW_ALERT_DIALOG: {
-    action: createUILockAction(async (_, payload: AlertDialogOptions) => {
+    action: createUILockAction(async (_, payload: MessageDialogOptions) => {
       return await showAlertDialog(payload);
     }),
   },
@@ -512,7 +523,7 @@ export const uiStore = createPartialStore<UiStoreTypes>({
     async action({ getters, actions, state }) {
       const activeAudioKey = getters.ACTIVE_AUDIO_KEY;
       if (activeAudioKey == undefined) {
-        void actions.SHOW_ALERT_DIALOG({
+        void actions.SHOW_MESSAGE_DIALOG({
           type: "warning-light",
           title: "テキスト欄が選択されていません",
           message: "音声を書き出したいテキスト欄を選択してください。",

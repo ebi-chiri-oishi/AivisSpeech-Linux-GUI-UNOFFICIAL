@@ -102,13 +102,13 @@ export async function getPidFromPort(
 
   const exec = isWindows
     ? {
-        cmd: "netstat",
-        args: ["-ano"],
-      }
+      cmd: "netstat",
+      args: ["-ano"],
+    }
     : {
-        cmd: "lsof",
-        args: ["-i", `:${hostInfo.port}`, "-t", "-sTCP:LISTEN"],
-      };
+      cmd: "lsof",
+      args: ["-i", `:${hostInfo.port}`, "-t", "-sTCP:LISTEN"],
+    };
 
   portLog(
     hostInfo.port,
@@ -148,32 +148,39 @@ export async function getPidFromPort(
 export async function getProcessNameFromPid(
   hostInfo: HostInfo,
   pid: number,
-): Promise<string> {
+): Promise<string | undefined> {
   portLog(hostInfo.port, `Getting process name from pid=${pid}...`);
   const exec = isWindows
     ? {
-        cmd: "wmic",
-        args: ["process", "where", `"ProcessID=${pid}"`, "get", "name"],
-      }
+      cmd: "tasklist",
+      args: ["/FI", `"PID eq ${pid}"`, "/NH"],
+    }
     : {
-        cmd: "ps",
-        args: ["-p", pid.toString(), "-o", "comm="],
-      };
+      cmd: "ps",
+      args: ["-p", pid.toString(), "-o", "comm="],
+    };
 
   const stdout = execFileSync(exec.cmd, exec.args, { shell: true }).toString();
 
   /*
    * ex) stdout:
    * ```
-   * Name
-   * node.exe
+   *
+   * node.exe     25180 Console   1     86,544 K
    * ```
    * -> `node.exe`
    */
-  const processName = isWindows ? stdout.split("\n")[1] : stdout;
+  const processName = (
+    isWindows ? stdout.split("\r\n").at(1)?.split(/ +/)?.at(0) : stdout
+  )?.trim();
 
-  portLog(hostInfo.port, `Found process name: ${processName}`);
-  return processName.trim();
+  if (processName == undefined) {
+    portWarn(hostInfo.port, `Not found process name from pid=${pid}!`);
+    return undefined;
+  } else {
+    portLog(hostInfo.port, `Found process name: ${processName}`);
+    return processName;
+  }
 }
 
 /**

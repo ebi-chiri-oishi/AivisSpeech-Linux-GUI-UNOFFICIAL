@@ -29,7 +29,7 @@
     "markdownlint": "markdownlint --ignore node_modules/ --ignore dist/ --ignore dist_electron/ --ignore dist_preview/ ./",
     "typecheck": "vue-tsc --noEmit",
     "typos": "cross-env ./vendored/typos/typos",
-    "electron:build": "cross-env VITE_TARGET=electron vite build && electron-builder --config electron-builder.config.js --publish never",
+    "electron:build": "cross-env VITE_TARGET=electron NODE_OPTIONS=--max-old-space-size=4096 vite build && electron-builder --config electron-builder.config.js --publish never",
     "electron:serve": "cross-env VITE_TARGET=electron vite",
     "browser:serve": "cross-env VITE_TARGET=browser vite",
     "browser:build": "cross-env VITE_TARGET=browser vite build",
@@ -45,6 +45,9 @@
   "dependencies": {
     "@gtm-support/vue-gtm": "1.2.3",
     "@quasar/extras": "1.16.12",
+    "@sentry/electron": "5.9.0",
+    "@sentry/vite-plugin": "2.22.7",
+    "@sentry/vue": "8.47.0",
     "@sevenc-nanashi/utaformatix-ts": "npm:@jsr/sevenc-nanashi__utaformatix-ts@0.4.0",
     "@std/path": "npm:@jsr/std__path@1.0.8",
     "async-lock": "1.4.0",
@@ -54,9 +57,11 @@
     "encoding-japanese": "1.0.30",
     "fast-array-diff": "1.1.0",
     "fast-base64": "0.1.8",
+    "@analytics-debugger/ga4mp": "0.0.8",
     "glob": "11.0.0",
     "hotkeys-js": "3.13.6",
     "immer": "9.0.21",
+    "kuromoji": "github:VOICEVOX/kuromoji.js#0.0.1",
     "markdown-it": "14.1.0",
     "markdown-it-github-alerts": "0.3.0",
     "move-file": "3.0.0",
@@ -137,6 +142,7 @@
     "vite-plugin-electron": "0.29.0",
     "vite-tsconfig-paths": "5.1.2",
     "vitest": "2.1.2",
+    "vue-component-type-helpers": "2.1.6",
     "vue-tsc": "2.1.10",
     "yargs": "17.2.1"
   }

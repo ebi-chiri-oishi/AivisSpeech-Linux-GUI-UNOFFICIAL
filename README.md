@@ -67,7 +67,7 @@ In addition, we have inherited the README from AivisSpeech and VOICEVOX below, b
 ## 動作環境
 
 Windows・macOS 搭載の PC に対応しています。  
-AivisSpeech を起動するには、PC に 3GB 以上の空きメモリ (RAM) が必要です。
+AivisSpeech を起動するには、PC に 1.5GB 以上の空きメモリ (RAM) が必要です。
 
 - **Windows:** Windows 10 (22H2 以降)・Windows 11  
 - **macOS:** macOS 13 Ventura 以降
@@ -150,7 +150,7 @@ AIVMX ファイルは、OS ごとに以下のフォルダに配置してくだ�
 ## 開発環境の構築
 
 手順はオリジナルの VOICEVOX と異なります。  
-事前に Node.js 20.12.2 がインストールされている必要があります。
+事前に Node.js 22.11.0 がインストールされている必要があります。
 
 ```bash
 # 依存関係をすべてインストール

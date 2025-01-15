@@ -125,14 +125,14 @@ registerHotkeyWithCleanup({
 /*
 registerHotkeyWithCleanup({
   editor: "talk",
-  name: "アクセント欄を表示",
+  name: "ｱｸｾﾝﾄ欄を表示",
   callback: () => {
     selectedDetail.value = "accent";
   },
 });
 registerHotkeyWithCleanup({
   editor: "talk",
-  name: "イントネーション欄を表示",
+  name: "ｲﾝﾄﾈｰｼｮﾝ欄を表示",
   callback: () => {
     if (supportedFeatures.value?.adjustMoraPitch) {
       selectedDetail.value = "pitch";
@@ -255,15 +255,13 @@ const play = async () => {
     // AivisSpeech Engine から音声合成エラーが返された
     if (e instanceof Error && e.message === "Response returned an error code") {
       void store.actions.SHOW_ALERT_DIALOG({
-        type: "error",
         title: "音声合成に失敗しました",
         message:
           msg ??
-          "現在のテキストや読み方では音声合成できない可能性があります。テキストや読み方を変更して再度お試しください。",
+          "現在のテキストや読み方では音声合成できない可能性があります。\nテキストや読み方を変更して再度お試しください。",
       });
     } else {
       void store.actions.SHOW_ALERT_DIALOG({
-        type: "error",
         title: "再生に失敗しました",
         message: msg ?? "音声合成エンジンの再起動をお試しください。",
       });

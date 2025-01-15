@@ -68,6 +68,15 @@
                       class="text-no-wrap text-bold q-mr-sm"
                       @click="openLogDirectory"
                     />
+                    <QBtn
+                      v-if="page.component === ContactInfo"
+                      outline
+                      icon="sym_r_description"
+                      label="音声合成エンジンのログフォルダを開く"
+                      textColor="display"
+                      class="text-no-wrap text-bold q-mr-sm"
+                      @click="openDefaultEngineLogDirectory"
+                    />
                   </QToolbar>
                 </QHeader>
                 <Component :is="page.component" v-bind="page.props" />
@@ -142,21 +151,21 @@ const newUpdateResult = useFetchNewUpdateInfos(
 const licenses = ref<Record<string, string>[]>();
 void store.actions.GET_OSS_LICENSES().then((obj) => (licenses.value = obj));
 
-const policy = ref<string>();
+const policy = ref<string>("");
 void store.actions.GET_POLICY_TEXT().then((obj) => (policy.value = obj));
 
-const howToUse = ref<string>();
+const howToUse = ref<string>("");
 void store.actions.GET_HOW_TO_USE_TEXT().then((obj) => (howToUse.value = obj));
 
-const ossCommunityInfos = ref<string>();
+const ossCommunityInfos = ref<string>("");
 void store.actions
   .GET_OSS_COMMUNITY_INFOS()
   .then((obj) => (ossCommunityInfos.value = obj));
 
-const qAndA = ref<string>();
+const qAndA = ref<string>("");
 void store.actions.GET_Q_AND_A_TEXT().then((obj) => (qAndA.value = obj));
 
-const contact = ref<string>();
+const contact = ref<string>("");
 void store.actions.GET_CONTACT_TEXT().then((obj) => (contact.value = obj));
 
 const pagedata = computed(() => {
@@ -190,13 +199,13 @@ const pagedata = computed(() => {
         updateInfos: updateInfos.value,
         ...(newUpdateResult.value.status == "updateAvailable"
           ? {
-              isUpdateAvailable: true,
-              latestVersion: newUpdateResult.value.latestVersion,
-            }
+            isUpdateAvailable: true,
+            latestVersion: newUpdateResult.value.latestVersion,
+          }
           : {
-              isUpdateAvailable: false,
-              latestVersion: undefined,
-            }),
+            isUpdateAvailable: false,
+            latestVersion: "",
+          }),
       },
     },
     {
@@ -274,6 +283,7 @@ const selectedPageIndex = ref(0);
 // });
 
 const openLogDirectory = () => window.backend.openLogDirectory();
+const openDefaultEngineLogDirectory = () => window.backend.openDefaultEngineLogDirectory();
 </script>
 
 <style scoped lang="scss">
@@ -290,7 +300,8 @@ const openLogDirectory = () => window.backend.openLogDirectory();
 }
 
 .selected-item {
-  background-color: rgba(var(--color-toolbar-rgb), 0.75);
+  background-color: hsl(206 66% 32% / 1);
+  border-right: 4px solid colors.$primary;
   color: colors.$display;
 }
 

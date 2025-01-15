@@ -310,8 +310,8 @@ export const migrateProjectFileObject = async (
 
   // ----- 以下は AivisSpeech 固有のマイグレーション処理 -----
 
-  // 1.1.0 未満 -> 1.1.0 以上へのマイグレーション (開発版のみ常にマイグレーションを実行する)
-  if (semver.satisfies(projectAppVersion, "<1.1.0", semverSatisfiesOptions) || projectAppVersion === '999.999.999') {
+  // 1.1.0 未満 -> 1.1.0-dev 以上へのマイグレーション (開発版のみ常にマイグレーションを実行する)
+  if (semver.satisfies(projectAppVersion, "<1.1.0-dev", semverSatisfiesOptions) || projectAppVersion === "999.999.999") {
 
     // AivisSpeech ではソング機能は封印されているが、実装上の都合で一応マイグレーションしている
     // tracks: Track[] -> tracks: Record<TrackId, Track> + trackOrder: TrackId[]
@@ -333,6 +333,15 @@ export const migrateProjectFileObject = async (
     for (const audioItemsKey in projectData.talk.audioItems) {
       if (!("pauseLengthScale" in projectData.talk.audioItems[audioItemsKey].query)) {
         projectData.talk.audioItems[audioItemsKey].query.pauseLengthScale = 1;
+      }
+    }
+
+    // プリセット内の文内無音倍率の追加
+    if (projectData.presets?.items) {
+      for (const presetKey in projectData.presets.items) {
+        if (!("pauseLengthScale" in projectData.presets.items[presetKey])) {
+          projectData.presets.items[presetKey].pauseLengthScale = 1;
+        }
       }
     }
   }

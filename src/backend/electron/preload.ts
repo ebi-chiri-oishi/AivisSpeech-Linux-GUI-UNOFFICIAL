@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { IpcRendererInvoke } from "./ipc";
 import {
   ConfigType,
@@ -13,7 +13,7 @@ const ipcRendererInvokeProxy = new Proxy(
   {
     get:
       (_, channel: string) =>
-      (...args: unknown[]) =>
+        (...args: unknown[]) =>
         ipcRenderer.invoke(channel, ...args),
   },
 ) as IpcRendererInvoke;
@@ -31,17 +31,6 @@ const api: Sandbox = {
 
   getAltPortInfos: async () => {
     return await ipcRendererInvokeProxy.GET_ALT_PORT_INFOS();
-  },
-
-  showAudioSaveDialog: ({ title, defaultPath }) => {
-    return ipcRendererInvokeProxy.SHOW_AUDIO_SAVE_DIALOG({
-      title,
-      defaultPath,
-    });
-  },
-
-  showTextSaveDialog: ({ title, defaultPath }) => {
-    return ipcRendererInvokeProxy.SHOW_TEXT_SAVE_DIALOG({ title, defaultPath });
   },
 
   showSaveDirectoryDialog: ({ title }) => {
@@ -71,6 +60,15 @@ const api: Sandbox = {
     return ipcRendererInvokeProxy.SHOW_IMPORT_FILE_DIALOG({
       title,
       name,
+      extensions,
+    });
+  },
+
+  showExportFileDialog: ({ title, defaultPath, extensionName, extensions }) => {
+    return ipcRendererInvokeProxy.SHOW_EXPORT_FILE_DIALOG({
+      title,
+      defaultPath,
+      extensionName,
       extensions,
     });
   },
@@ -152,6 +150,10 @@ const api: Sandbox = {
     void ipcRendererInvokeProxy.OPEN_LOG_DIRECTORY();
   },
 
+  openDefaultEngineLogDirectory: () => {
+    void ipcRendererInvokeProxy.OPEN_DEFAULT_ENGINE_LOG_DIRECTORY();
+  },
+
   engineInfos: () => {
     return ipcRendererInvokeProxy.ENGINE_INFOS();
   },
@@ -174,10 +176,6 @@ const api: Sandbox = {
 
   hotkeySettings: (newData) => {
     return ipcRendererInvokeProxy.HOTKEY_SETTINGS({ newData });
-  },
-
-  getDefaultHotkeySettings: async () => {
-    return await ipcRendererInvokeProxy.GET_DEFAULT_HOTKEY_SETTINGS();
   },
 
   getDefaultToolbarSetting: async () => {
@@ -233,6 +231,11 @@ const api: Sandbox = {
    */
   reloadApp: async ({ isMultiEngineOffMode }) => {
     await ipcRendererInvokeProxy.RELOAD_APP({ isMultiEngineOffMode });
+  },
+
+  /** webUtils.getPathForFileを呼ぶ */
+  getPathForFile: (file) => {
+    return webUtils.getPathForFile(file);
   },
 };
 

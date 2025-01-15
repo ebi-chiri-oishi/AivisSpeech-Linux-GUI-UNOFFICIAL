@@ -3,13 +3,15 @@ import AsyncLock from "async-lock";
 import log from "electron-log/main";
 import {
   ConfigType,
-  configSchema,
-  defaultHotkeySettings,
-  HotkeySettingType,
+  getConfigSchema,
   ExperimentalSettingType,
-  HotkeyCombination,
 } from "@/type/preload";
 import { ensureNotNullish } from "@/helpers/errorHelper";
+import {
+  HotkeyCombination,
+  getDefaultHotkeySettings,
+  HotkeySettingType,
+} from "@/domain/hotkeyAction";
 
 const lockKey = "save";
 
@@ -276,7 +278,8 @@ const migrations: [string, (store: Record<string, unknown>) => unknown][] = [
   */
   // ----- 以下は AivisSpeech 固有のマイグレーション処理 -----
   [
-    ">=1.1",
+    // 1.1.0 未満 -> 1.1.0-dev 以上へのマイグレーション
+    ">=1.1.0-dev",
     (config) => {
 
       // プリセット機能を実験的機能から通常機能に
@@ -338,6 +341,7 @@ export type Metadata = {
  */
 export abstract class BaseConfigManager {
   protected config: ConfigType | undefined;
+  protected isMac: boolean;
 
   private lock = new AsyncLock();
 
@@ -346,6 +350,10 @@ export abstract class BaseConfigManager {
   protected abstract save(config: ConfigType & Metadata): Promise<void>;
 
   protected abstract getAppVersion(): string;
+
+  constructor({ isMac }: { isMac: boolean }) {
+    this.isMac = isMac;
+  }
 
   public reset() {
     this.config = this.getDefaultConfig();
@@ -357,13 +365,15 @@ export abstract class BaseConfigManager {
       const data = await this.load();
       const version = data.__internal__.migrations.version;
       for (const [versionRange, migration] of migrations) {
-        if (!semver.satisfies(version, versionRange) || version === '999.999.999') {
+        if (!semver.satisfies(version, versionRange) || version === "999.999.999") {
           log.info(`Migrating ${version} to ${versionRange} ...`);
           migration(data);
           log.info(`Migrated ${version} to ${versionRange} successfully.`);
         }
       }
-      this.config = this.migrateHotkeySettings(configSchema.parse(data));
+      this.config = this.migrateHotkeySettings(
+        getConfigSchema({ isMac: this.isMac }).parse(data),
+      );
       this._save();
     } else {
       this.reset();
@@ -384,10 +394,16 @@ export abstract class BaseConfigManager {
     this._save();
   }
 
+  /** 全ての設定を取得する。テスト用。 */
+  public getAll(): ConfigType {
+    if (!this.config) throw new Error("Config is not initialized");
+    return this.config;
+  }
+
   private _save() {
     void this.lock.acquire(lockKey, async () => {
       await this.save({
-        ...configSchema.parse({
+        ...getConfigSchema({ isMac: this.isMac }).parse({
           ...this.config,
         }),
         __internal__: {
@@ -422,22 +438,22 @@ export abstract class BaseConfigManager {
   private migrateHotkeySettings(data: ConfigType): ConfigType {
     const COMBINATION_IS_NONE = HotkeyCombination("####");
     const loadedHotkeys = structuredClone(data.hotkeySettings);
-    const hotkeysWithoutNewCombination = defaultHotkeySettings.map(
-      (defaultHotkey) => {
-        const loadedHotkey = loadedHotkeys.find(
-          (loadedHotkey) => loadedHotkey.action === defaultHotkey.action,
-        );
-        const hotkeyWithoutCombination: HotkeySettingType = {
-          action: defaultHotkey.action,
-          combination: COMBINATION_IS_NONE,
-        };
-        return loadedHotkey ?? hotkeyWithoutCombination;
-      },
-    );
+    const hotkeysWithoutNewCombination = getDefaultHotkeySettings({
+      isMac: this.isMac,
+    }).map((defaultHotkey) => {
+      const loadedHotkey = loadedHotkeys.find(
+        (loadedHotkey) => loadedHotkey.action === defaultHotkey.action,
+      );
+      const hotkeyWithoutCombination: HotkeySettingType = {
+        action: defaultHotkey.action,
+        combination: COMBINATION_IS_NONE,
+      };
+      return loadedHotkey ?? hotkeyWithoutCombination;
+    });
     const migratedHotkeys = hotkeysWithoutNewCombination.map((hotkey) => {
       if (hotkey.combination === COMBINATION_IS_NONE) {
         const newHotkey = ensureNotNullish(
-          defaultHotkeySettings.find(
+          getDefaultHotkeySettings({ isMac: this.isMac }).find(
             (defaultHotkey) => defaultHotkey.action === hotkey.action,
           ),
         );
@@ -464,6 +480,6 @@ export abstract class BaseConfigManager {
   }
 
   protected getDefaultConfig(): ConfigType {
-    return configSchema.parse({});
+    return getConfigSchema({ isMac: this.isMac }).parse({});
   }
 }

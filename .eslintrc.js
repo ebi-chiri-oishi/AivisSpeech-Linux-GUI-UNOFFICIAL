@@ -13,6 +13,9 @@ const tsEslintRules = {
   // TODO: いずれは有効化する
   "@typescript-eslint/require-await": "off",
 
+  // 比較関数無しでのsortは文字列での比較になり、ミスが起こりやすいため有効化
+  "@typescript-eslint/require-array-sort-compare": "error",
+
   "@typescript-eslint/no-misused-promises": [
     "error",
     {
@@ -107,6 +110,32 @@ module.exports = {
     "vue/max-attributes-per-line": "off",
     "vue/multiline-html-element-content-newline": "off",
     "vue/singleline-html-element-content-newline": "off",
+    // AivisSpeech 独自
+    // 複数行に渡る型のインデントが潰れないようにするために設定を工夫している
+    // ref: https://stackoverflow.com/questions/75893980/typescript-eslint-indent-rule-doesnt-indent-multi-line-object-parameters-correc
+    // ref: https://github.com/typescript-eslint/typescript-eslint/issues/455#issuecomment-580636221
+    indent: "off",  // !!!! VERY IMPORTANT !!!!
+    "@typescript-eslint/indent": [
+      "error",
+      2,
+      {
+        SwitchCase: 1,
+        ObjectExpression: 1,
+        MemberExpression: 1,
+        CallExpression: {
+          arguments: 1,
+        },
+        ignoredNodes: [
+          "PropertyDefinition[decorators]",
+          "TSUnionType",
+          "FunctionExpression[params]",
+          "CallExpression[arguments]",  // !!!! VERY IMPORTANT !!!!
+          "TSTypeParameterInstantiation",  // !!!! VERY IMPORTANT !!!!
+        ],
+      },
+    ],
+    "@typescript-eslint/quotes": ["error", "double", { avoidEscape: true }],
+    "@typescript-eslint/semi": ["error", "always"],
   },
   overrides: [
     {

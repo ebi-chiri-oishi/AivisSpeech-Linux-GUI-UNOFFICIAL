@@ -1,14 +1,16 @@
 import * as diff from "fast-array-diff";
 import {
   CharacterInfo,
+  PresetSliderKey,
   StyleInfo,
   StyleType,
   ToolbarButtonTagType,
 } from "@/type/preload";
-import { AccentPhrase, Mora } from "@/openapi";
+import { AccentPhrase, FramePhoneme, Mora } from "@/openapi";
 import { cloneWithUnwrapProxy } from "@/helpers/cloneWithUnwrapProxy";
-import { DEFAULT_TRACK_NAME } from "@/sing/domain";
+import { DEFAULT_TRACK_NAME, isVowel } from "@/sing/domain";
 import { isMac } from "@/helpers/platform";
+import { generateTextFileData } from "@/helpers/fileDataGenerator";
 
 export const DEFAULT_STYLE_NAME = "ノーマル";
 export const DEFAULT_PROJECT_NAME = "Untitled";
@@ -41,14 +43,23 @@ export function sanitizeFileName(fileName: string): string {
   return fileName.replace(sanitizer, "");
 }
 
+type SliderParameter = {
+  max: () => number;
+  min: () => number;
+  step: () => number;
+  scrollStep: () => number;
+  scrollMinStep?: () => number;
+};
+
 /**
  * AudioInfoコンポーネントに表示されるパラメータ
+ * TODO: src/domain/talk.ts辺りに切り出す
  */
-export const SLIDER_PARAMETERS = {
+export const SLIDER_PARAMETERS: Record<PresetSliderKey, SliderParameter> = {
   /**
    * 話速パラメータの定義
    */
-  SPEED: {
+  speedScale: {
     max: () => 2,
     min: () => 0.5,
     step: () => 0.01,
@@ -58,7 +69,7 @@ export const SLIDER_PARAMETERS = {
   /**
    * スタイルの強さパラメータの定義
    */
-  INTONATION: {
+  intonationScale: {
     max: () => 2,
     min: () => 0,
     step: () => 0.01,
@@ -68,7 +79,7 @@ export const SLIDER_PARAMETERS = {
   /**
    * テンポの緩急パラメータの定義
    */
-  TEMPO_DYNAMICS: {
+  tempoDynamicsScale: {
     max: () => 2,
     min: () => 0,
     step: () => 0.01,
@@ -78,7 +89,7 @@ export const SLIDER_PARAMETERS = {
   /**
    * 音高パラメータの定義
    */
-  PITCH: {
+  pitchScale: {
     max: () => 0.15,
     min: () => -0.15,
     step: () => 0.01,
@@ -87,7 +98,17 @@ export const SLIDER_PARAMETERS = {
   /**
    *  音量パラメータの定義
    */
-  VOLUME: {
+  volumeScale: {
+    max: () => 2,
+    min: () => 0,
+    step: () => 0.01,
+    scrollStep: () => 0.1,
+    scrollMinStep: () => 0.01,
+  },
+  /**
+   *  文内無音(倍率)パラメータの定義
+   */
+  pauseLengthScale: {
     max: () => 2,
     min: () => 0,
     step: () => 0.01,
@@ -97,7 +118,7 @@ export const SLIDER_PARAMETERS = {
   /**
    *  開始無音パラメータの定義
    */
-  PRE_PHONEME_LENGTH: {
+  prePhonemeLength: {
     max: () => 1.5,
     min: () => 0,
     step: () => 0.01,
@@ -107,18 +128,8 @@ export const SLIDER_PARAMETERS = {
   /**
    *  終了無音パラメータの定義
    */
-  POST_PHONEME_LENGTH: {
+  postPhonemeLength: {
     max: () => 1.5,
-    min: () => 0,
-    step: () => 0.01,
-    scrollStep: () => 0.1,
-    scrollMinStep: () => 0.01,
-  },
-  /**
-   *  文内無音(倍率)パラメータの定義
-   */
-  PAUSE_LENGTH_SCALE: {
-    max: () => 2,
     min: () => 0,
     step: () => 0.01,
     scrollStep: () => 0.1,
@@ -127,7 +138,7 @@ export const SLIDER_PARAMETERS = {
   /**
    *  モーフィングレートパラメータの定義
    */
-  MORPHING_RATE: {
+  morphingRate: {
     max: () => 1,
     min: () => 0,
     step: () => 0.01,
@@ -366,12 +377,12 @@ function formatCommonFileNameFromRawData(commonVars: {
   date: string;
   projectName: string;
 }): {
-  characterName: string;
-  index: string;
-  styleName: string;
-  date: string;
-  projectName: string;
-} {
+    characterName: string;
+    index: string;
+    styleName: string;
+    date: string;
+    projectName: string;
+  } {
   const characterName = sanitizeFileName(commonVars.characterName);
   const index = (commonVars.index + 1).toString().padStart(3, "0");
   const styleName = sanitizeFileName(commonVars.styleName);
@@ -472,7 +483,7 @@ export const getToolbarButtonIcon = (tag: ToolbarButtonTagType): string => {
     PLAY: "sym_r_play_arrow",
     STOP: "sym_r_stop",
     EXPORT_AUDIO_SELECTED: "sym_r_outbound",
-    EXPORT_AUDIO_ALL: 'sym_r_export_notes',
+    EXPORT_AUDIO_ALL: "sym_r_export_notes",
     EXPORT_AUDIO_CONNECT_ALL: 'img:data:image/svg+xml;charset=utf8,<svg viewBox="0 0 13 14" fill="none" xmlns="http://www.w3.org/2000/svg"><g clip-path="url(%23clip0_2_4)"><path d="M10.7961 10.7601V11.7519C10.7961 11.8254 10.8236 11.8897 10.8787 11.9448C10.9338 11.9999 10.9981 12.0274 11.0715 12.0274C11.145 12.0274 11.2093 11.9999 11.2644 11.9448C11.3195 11.8897 11.347 11.8254 11.347 11.7519V10.099C11.347 10.0255 11.3195 9.96121 11.2644 9.90611C11.2093 9.85101 11.145 9.82346 11.0715 9.82346H9.41858C9.34512 9.82346 9.28084 9.85101 9.22574 9.90611C9.17064 9.96121 9.14309 10.0255 9.14309 10.099C9.14309 10.1724 9.17064 10.2367 9.22574 10.2918C9.28084 10.3469 9.34512 10.3745 9.41858 10.3745H10.4104L9.06044 11.7244C9.00534 11.7795 8.97779 11.8438 8.97779 11.9172C8.97779 11.9907 9.00534 12.055 9.06044 12.1101C9.11554 12.1652 9.17982 12.1927 9.25329 12.1927C9.32675 12.1927 9.39103 12.1652 9.44613 12.1101L10.7961 10.7601ZM10.2451 13.6804C9.48286 13.6804 8.83316 13.4118 8.29595 12.8746C7.75873 12.3373 7.49013 11.6876 7.49013 10.9254C7.49013 10.1632 7.75873 9.51353 8.29595 8.97632C8.83316 8.43911 9.48286 8.1705 10.2451 8.1705C11.0073 8.1705 11.657 8.43911 12.1942 8.97632C12.7314 9.51353 13 10.1632 13 10.9254C13 11.6876 12.7314 12.3373 12.1942 12.8746C11.657 13.4118 11.0073 13.6804 10.2451 13.6804Z" fill="%23FBEEEA"/><path fill-rule="evenodd" clip-rule="evenodd" d="M9.65093 2.61512L7.68494 0.649134C7.47397 0.438155 7.18782 0.319626 6.88945 0.319626H2.10543C1.48411 0.319626 0.980434 0.823298 0.980434 1.44463V11.1946C0.980434 11.816 1.48411 12.3196 2.10543 12.3196H7.08844C7.06335 12.2558 7.04031 12.1909 7.01939 12.1251C6.91026 11.8317 6.84 11.5195 6.81485 11.1946H2.10543V1.44463H5.85543V3.88213C5.85543 4.19279 6.10727 4.44463 6.41793 4.44463H8.85543V7.77702C9.20389 7.623 9.58271 7.52513 9.98043 7.49487V3.41061C9.98043 3.11224 9.86191 2.8261 9.65093 2.61512ZM8.76445 3.31963H6.98043V1.53561L8.76445 3.31963ZM5.48043 9.41281C5.48043 9.66338 5.17748 9.78887 5.00032 9.61168L4.16793 8.76852H3.51168C3.35636 8.76852 3.23043 8.64259 3.23043 8.48727V7.17477C3.23043 7.01945 3.35636 6.89352 3.51168 6.89352H4.16793L5.00032 6.02757C5.1775 5.85038 5.48043 5.97587 5.48043 6.22644V9.41281ZM6.44608 8.3082C6.65822 8.09031 6.65843 7.74259 6.44611 7.52448C5.92699 6.99123 6.73286 6.20621 7.25224 6.73977C7.88969 7.39461 7.89002 8.43767 7.25226 9.09291C6.74149 9.61759 5.91757 8.85116 6.44608 8.3082Z" fill="%23FBEEEA"/></g><defs><clipPath id="clip0_2_4"><rect width="13" height="14" fill="white"/></clipPath></defs></svg>',
     SAVE_PROJECT: "sym_r_save",
     UNDO: "sym_r_undo",
@@ -540,3 +551,28 @@ export const filterCharacterInfosByStyleType = (
 
   return withoutEmptyStyles;
 };
+
+export async function generateLabelFileDataFromFramePhonemes(
+  phonemes: FramePhoneme[],
+  frameRate: number,
+) {
+  let labString = "";
+  let timestamp = 0;
+
+  const writeLine = (phonemeLengthSeconds: number, phoneme: string) => {
+    labString += timestamp.toFixed() + " ";
+    timestamp += phonemeLengthSeconds * 1e7; // 100ns単位に変換
+    labString += timestamp.toFixed() + " ";
+    labString += phoneme + "\n";
+  };
+
+  for (const phoneme of phonemes) {
+    if (isVowel(phoneme.phoneme) && phoneme.phoneme !== "N") {
+      writeLine(phoneme.frameLength / frameRate, phoneme.phoneme.toLowerCase());
+    } else {
+      writeLine(phoneme.frameLength / frameRate, phoneme.phoneme);
+    }
+  }
+
+  return await generateTextFileData({ text: labString });
+}

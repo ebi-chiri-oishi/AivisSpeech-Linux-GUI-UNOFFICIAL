@@ -19,6 +19,7 @@ import {
   UserDictWord,
   MorphableTargetInfo,
   FrameAudioQuery,
+  WordTypes,
   Note as NoteForRequestToEngine,
 } from "@/openapi";
 import {
@@ -26,7 +27,6 @@ import {
   DefaultStyleId,
   AcceptRetrieveTelemetryStatus,
   AcceptTermsStatus,
-  HotkeySettingType,
   MoraDataType,
   SavingSetting,
   ThemeConf,
@@ -60,7 +60,7 @@ import {
   TextDialogResult,
   NotifyAndNotShowAgainButtonOption,
   LoadingScreenOption,
-  AlertDialogOptions,
+  MessageDialogOptions,
   ConfirmDialogOptions,
   WarningDialogOptions,
 } from "@/components/Dialog/Dialog";
@@ -72,6 +72,11 @@ import {
   timeSignatureSchema,
   trackSchema,
 } from "@/domain/project/schema";
+import { HotkeySettingType } from "@/domain/hotkeyAction";
+import {
+  MultiFileProjectFormat,
+  SingleFileProjectFormat,
+} from "@/sing/utaformatixProject/utils";
 
 /**
  * エディタ用のAudioQuery
@@ -529,16 +534,16 @@ export type AudioCommandStoreTypes = {
       changes: Record<
         AudioKey,
         | {
-            update: "AccentPhrases";
-            accentPhrases: AccentPhrase[];
-          }
+          update: "AccentPhrases";
+          accentPhrases: AccentPhrase[];
+        }
         | {
-            update: "AudioQuery";
-            query: EditorAudioQuery;
-          }
+          update: "AudioQuery";
+          query: EditorAudioQuery;
+        }
         | {
-            update: "OnlyVoice";
-          }
+          update: "OnlyVoice";
+        }
       >;
     };
     action(payload: { audioKeys: AudioKey[]; voice: Voice }): void;
@@ -698,7 +703,12 @@ export type AudioCommandStoreTypes = {
     mutation: {
       audioKeyItemPairs: { audioItem: AudioItem; audioKey: AudioKey }[];
     };
-    action(payload: { filePath?: string }): void;
+    action(
+      payload:
+        | { type: "dialog" }
+        | { type: "path"; filePath: string }
+        | { type: "file"; file: File },
+    ): void;
   };
 
   COMMAND_PUT_TEXTS: {
@@ -858,7 +868,19 @@ const phraseKeySchema = z.string().brand<"PhraseKey">();
 export type PhraseKey = z.infer<typeof phraseKeySchema>;
 export const PhraseKey = (id: string): PhraseKey => phraseKeySchema.parse(id);
 
+// 編集対象 ノート or ピッチ
+// ボリュームを足すのであれば"VOLUME"を追加する
 export type SequencerEditTarget = "NOTE" | "PITCH";
+
+// ノート編集ツール
+export type NoteEditTool = "SELECT_FIRST" | "EDIT_FIRST";
+// ピッチ編集ツール
+export type PitchEditTool = "DRAW" | "ERASE";
+
+// プロジェクトの書き出しに使えるファイル形式
+export type ExportSongProjectFileType =
+  | SingleFileProjectFormat
+  | MultiFileProjectFormat;
 
 export type TrackParameters = {
   gain: boolean;
@@ -872,6 +894,11 @@ export type SongExportSetting = {
   withLimiter: boolean;
   withTrackParameters: TrackParameters;
 };
+
+export type SongExportState =
+  | "EXPORTING_AUDIO"
+  | "EXPORTING_LABEL"
+  | "NOT_EXPORTING";
 
 export type SingingStoreState = {
   tpqn: number; // Ticks Per Quarter Note
@@ -889,6 +916,8 @@ export type SingingStoreState = {
   sequencerZoomY: number;
   sequencerSnapType: number;
   sequencerEditTarget: SequencerEditTarget;
+  sequencerNoteTool: NoteEditTool;
+  sequencerPitchTool: PitchEditTool;
   _selectedNoteIds: Set<NoteId>;
   editingLyricNoteId?: NoteId;
   nowPlaying: boolean;
@@ -896,8 +925,8 @@ export type SingingStoreState = {
   startRenderingRequested: boolean;
   stopRenderingRequested: boolean;
   nowRendering: boolean;
-  nowAudioExporting: boolean;
-  cancellationOfAudioExportRequested: boolean;
+  exportState: SongExportState;
+  cancellationOfExportRequested: boolean;
   isSongSidebarOpen: boolean;
 };
 
@@ -996,6 +1025,11 @@ export type SingingStoreTypes = {
 
   SELECT_ALL_NOTES_IN_TRACK: {
     action({ trackId }: { trackId: TrackId }): void;
+  };
+
+  DESELECT_NOTES: {
+    mutation: { noteIds: NoteId[] };
+    action(payload: { noteIds: NoteId[] }): void;
   };
 
   DESELECT_ALL_NOTES: {
@@ -1133,9 +1167,18 @@ export type SingingStoreTypes = {
     action(payload: { editTarget: SequencerEditTarget }): void;
   };
 
-  SET_IS_DRAG: {
-    mutation: { isDrag: boolean };
-    action(payload: { isDrag: boolean }): void;
+  SET_SEQUENCER_NOTE_TOOL: {
+    mutation: { sequencerNoteTool: NoteEditTool };
+    action(payload: { sequencerNoteTool: NoteEditTool }): void;
+  };
+
+  SET_SEQUENCER_PITCH_TOOL: {
+    mutation: { sequencerPitchTool: PitchEditTool };
+    action(payload: { sequencerPitchTool: PitchEditTool }): void;
+  };
+
+  EXPORT_LABEL_FILES: {
+    action(payload: { dirPath?: string }): SaveResultObject[];
   };
 
   EXPORT_AUDIO_FILE: {
@@ -1152,6 +1195,14 @@ export type SingingStoreTypes = {
     }): SaveResultObject;
   };
 
+  GENERATE_FILE_PATH_FOR_TRACK_EXPORT: {
+    action(payload: {
+      trackId: TrackId;
+      directoryPath: string;
+      extension: string;
+    }): Promise<string>;
+  };
+
   EXPORT_FILE: {
     action(payload: {
       filePath: string;
@@ -1159,7 +1210,7 @@ export type SingingStoreTypes = {
     }): Promise<SaveResultObject>;
   };
 
-  CANCEL_AUDIO_EXPORT: {
+  CANCEL_EXPORT: {
     action(): void;
   };
 
@@ -1225,12 +1276,12 @@ export type SingingStoreTypes = {
     mutation: { nowRendering: boolean };
   };
 
-  SET_NOW_AUDIO_EXPORTING: {
-    mutation: { nowAudioExporting: boolean };
+  SET_EXPORT_STATE: {
+    mutation: { exportState: SongExportState };
   };
 
-  SET_CANCELLATION_OF_AUDIO_EXPORT_REQUESTED: {
-    mutation: { cancellationOfAudioExportRequested: boolean };
+  SET_CANCELLATION_OF_EXPORT_REQUESTED: {
+    mutation: { cancellationOfExportRequested: boolean };
   };
 
   RENDER: {
@@ -1349,6 +1400,13 @@ export type SingingStoreTypes = {
 
   APPLY_DEVICE_ID_TO_AUDIO_CONTEXT: {
     action(payload: { device: string }): void;
+  };
+
+  EXPORT_SONG_PROJECT: {
+    action(payload: {
+      fileType: ExportSongProjectFileType;
+      fileTypeLabel: string;
+    }): Promise<SaveResultObject>;
   };
 };
 
@@ -1638,8 +1696,12 @@ export type EngineStoreTypes = {
     action(payload: { engineId: EngineId; styleId: StyleId }): Promise<boolean>;
   };
 
-  INITIALIZE_ENGINE_SPEAKER: {
-    action(payload: { engineId: EngineId; styleId: StyleId }): void;
+  INITIALIZE_ENGINE_CHARACTER: {
+    action(payload: {
+      engineId: EngineId;
+      styleId: StyleId;
+      uiLock: boolean;
+    }): void;
   };
 
   VALIDATE_ENGINE_DIR: {
@@ -1805,7 +1867,12 @@ export type ProjectStoreTypes = {
   };
 
   LOAD_PROJECT_FILE: {
-    action(payload: { filePath?: string; confirm?: boolean }): boolean;
+    action(
+      payload:
+        | { type: "dialog" }
+        | { type: "path"; filePath: string }
+        | { type: "file"; file: File },
+    ): boolean;
   };
 
   SAVE_PROJECT_FILE: {
@@ -1854,15 +1921,15 @@ export type SettingStoreState = {
   confirmedTips: ConfirmedTips;
   engineSettings: EngineSettings;
 } & Omit<RootMiscSettingType, "openedEditor"> & {
-    openedEditor: EditorType | undefined; // undefinedのときはどのエディタを開くか定まっていない
-  };
+  openedEditor: EditorType | undefined; // undefinedのときはどのエディタを開くか定まっていない
+};
 
 // keyとvalueの型を連動するようにしたPayloadを作る
 type KeyValuePayload<R, K extends keyof R = keyof R> = K extends keyof R
   ? {
-      key: K;
-      value: R[K];
-    }
+    key: K;
+    value: R[K];
+  }
   : never;
 
 export type SettingStoreTypes = {
@@ -2031,8 +2098,12 @@ export type UiStoreTypes = {
     action(payload: Partial<DialogStates>): void;
   };
 
+  SHOW_MESSAGE_DIALOG: {
+    action(payload: MessageDialogOptions): TextDialogResult;
+  };
+
   SHOW_ALERT_DIALOG: {
-    action(payload: AlertDialogOptions): TextDialogResult;
+    action(payload: Omit<MessageDialogOptions, "type">): TextDialogResult;
   };
 
   SHOW_CONFIRM_DIALOG: {
@@ -2133,9 +2204,9 @@ export type UiStoreTypes = {
       obj:
         | { closeOrReload: "close" }
         | {
-            closeOrReload: "reload";
-            isMultiEngineOffMode?: boolean;
-          },
+          closeOrReload: "reload";
+          isMultiEngineOffMode?: boolean;
+        },
     ): Promise<void>;
   };
 
@@ -2237,7 +2308,7 @@ export type PresetStoreTypes = {
  * Dictionary Store Types
  */
 
-export type DictionaryStoreState = Record<string, unknown>;
+export type DictionaryStoreState = Record<never, unknown>;
 
 export type DictionaryStoreTypes = {
   LOAD_USER_DICT: {
@@ -2253,8 +2324,9 @@ export type DictionaryStoreTypes = {
       surface: string;
       pronunciation: string;
       accentType: number;
+      wordType: WordTypes;
       priority: number;
-    }): Promise<void>;
+    }): Promise<string>;
   };
   REWRITE_WORD: {
     action(payload: {
@@ -2262,6 +2334,7 @@ export type DictionaryStoreTypes = {
       surface: string;
       pronunciation: string;
       accentType: number;
+      wordType: WordTypes;
       priority: number;
     }): Promise<void>;
   };
@@ -2277,7 +2350,7 @@ export type DictionaryStoreTypes = {
  * Setting Store Types
  */
 
-export type ProxyStoreState = Record<string, unknown>;
+export type ProxyStoreState = Record<never, unknown>;
 
 export type IEngineConnectorFactoryActions = ReturnType<
   IEngineConnectorFactory["instance"]
@@ -2303,7 +2376,8 @@ export type ProxyStoreTypes = {
  * All Store Types
  */
 
-export type State = AudioStoreState &
+export type State = (
+  AudioStoreState &
   AudioPlayerStoreState &
   AudioCommandStoreState &
   CommandStoreState &
@@ -2316,9 +2390,11 @@ export type State = AudioStoreState &
   DictionaryStoreState &
   ProxyStoreState &
   SingingStoreState &
-  SingingCommandStoreState;
+  SingingCommandStoreState
+);
 
-type AllStoreTypes = AudioStoreTypes &
+type AllStoreTypes = (
+  AudioStoreTypes &
   AudioPlayerStoreTypes &
   AudioCommandStoreTypes &
   CommandStoreTypes &
@@ -2331,7 +2407,8 @@ type AllStoreTypes = AudioStoreTypes &
   DictionaryStoreTypes &
   ProxyStoreTypes &
   SingingStoreTypes &
-  SingingCommandStoreTypes;
+  SingingCommandStoreTypes
+);
 
 export type AllGetters = StoreType<AllStoreTypes, "getter">;
 export type AllMutations = StoreType<AllStoreTypes, "mutation">;

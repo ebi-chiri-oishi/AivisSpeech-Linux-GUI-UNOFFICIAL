@@ -2,22 +2,25 @@ import { defaultEngine } from "./contract";
 import {
   checkFileExistsImpl,
   readFileImpl,
+  showExportFilePickerImpl,
   showOpenDirectoryDialogImpl,
   showOpenFilePickerImpl,
+  WritableFilePath,
   writeFileImpl,
 } from "./fileImpl";
 import { getConfigManager } from "./browserConfig";
+import { isFakePath } from "./fakePath";
 import { IpcSOData } from "@/type/ipc";
 import {
-  defaultHotkeySettings,
   defaultToolbarButtonSetting,
   EngineId,
   EngineSettingType,
   EngineSettings,
-  HotkeySettingType,
   Sandbox,
 } from "@/type/preload";
 import { AssetTextFileNames } from "@/type/staticResources";
+import { HotkeySettingType } from "@/domain/hotkeyAction";
+import path from "@/helpers/path";
 
 const toStaticPath = (fileName: string) =>
   `${import.meta.env.BASE_URL}/${fileName}`.replaceAll(/\/\/+/g, "/");
@@ -73,34 +76,6 @@ export const api: Sandbox = {
     // NOTE: ブラウザ版ではサポートされていません
     return Promise.resolve({});
   },
-  showAudioSaveDialog(obj: { title: string; defaultPath?: string }) {
-    return new Promise((resolve, reject) => {
-      if (obj.defaultPath == undefined) {
-        reject(
-          // storeやvue componentからdefaultPathを設定していなかったらrejectされる
-          new Error(
-            "ブラウザ版ではファイルの保存機能が一部サポートされていません。",
-          ),
-        );
-      } else {
-        resolve(obj.defaultPath);
-      }
-    });
-  },
-  showTextSaveDialog(obj: { title: string; defaultPath?: string }) {
-    return new Promise((resolve, reject) => {
-      if (obj.defaultPath == undefined) {
-        reject(
-          // storeやvue componentからdefaultPathを設定していなかったらrejectされる
-          new Error(
-            "ブラウザ版ではファイルの保存機能が一部サポートされていません。",
-          ),
-        );
-      } else {
-        resolve(obj.defaultPath);
-      }
-    });
-  },
   showSaveDirectoryDialog(obj: { title: string }) {
     return showOpenDirectoryDialogImpl(obj);
   },
@@ -152,20 +127,38 @@ export const api: Sandbox = {
           description: obj.name ?? "Text",
           accept: obj.extensions
             ? {
-                "application/octet-stream": obj.extensions.map(
+              "application/octet-stream": obj.extensions.map(
                   (ext) => `.${ext}`,
                 ),
-              }
+            }
             : {
-                "plain/text": [".txt"],
-              },
+              "plain/text": [".txt"],
+            },
         },
       ],
     });
     return fileHandle?.[0];
   },
+  async showExportFileDialog(obj: {
+    defaultPath?: string;
+    extensionName: string;
+    extensions: string[];
+    title: string;
+  }) {
+    const fileHandle = await showExportFilePickerImpl(obj);
+    return fileHandle;
+  },
   writeFile(obj: { filePath: string; buffer: ArrayBuffer }) {
-    return writeFileImpl(obj);
+    let filePath: WritableFilePath;
+    if (isFakePath(obj.filePath)) {
+      filePath = { type: "fake", path: obj.filePath };
+    } else if (obj.filePath.includes(path.SEPARATOR)) {
+      filePath = { type: "child", path: obj.filePath };
+    } else {
+      filePath = { type: "nameOnly", path: obj.filePath };
+    }
+
+    return writeFileImpl({ filePath, buffer: obj.buffer });
   },
   readFile(obj: { filePath: string }) {
     return readFileImpl(obj.filePath);
@@ -181,25 +174,25 @@ export const api: Sandbox = {
   },
   onReceivedIPCMsg,
   closeWindow() {
-    throw new Error(`Not supported on Browser version: closeWindow`);
+    throw new Error("Not supported on Browser version: closeWindow");
   },
   minimizeWindow() {
-    throw new Error(`Not supported on Browser version: minimizeWindow`);
+    throw new Error("Not supported on Browser version: minimizeWindow");
   },
   toggleMaximizeWindow() {
-    throw new Error(`Not supported on Browser version: toggleMaximizeWindow`);
+    throw new Error("Not supported on Browser version: toggleMaximizeWindow");
   },
   toggleFullScreen() {
-    throw new Error(`Not supported on Browser version: toggleFullScreen`);
+    throw new Error("Not supported on Browser version: toggleFullScreen");
   },
   zoomIn() {
-    throw new Error(`Not supported on Browser version: zoomIn`);
+    throw new Error("Not supported on Browser version: zoomIn");
   },
   zoomOut() {
-    throw new Error(`Not supported on Browser version: zoomOut`);
+    throw new Error("Not supported on Browser version: zoomOut");
   },
   zoomReset() {
-    throw new Error(`Not supported on Browser version: zoomReset`);
+    throw new Error("Not supported on Browser version: zoomReset");
   },
 
   /* eslint-disable no-console */ // ログの吐き出し先は console ぐらいしかないので、ここでは特例で許可している
@@ -216,17 +209,20 @@ export const api: Sandbox = {
     return;
   },
   openLogDirectory() {
-    throw new Error(`Not supported on Browser version: openLogDirectory`);
+    throw new Error("Not supported on Browser version: openLogDirectory");
+  },
+  openDefaultEngineLogDirectory() {
+    throw new Error("Not supported on Browser version: openDefaultEngineLogDirectory");
   },
   /* eslint-enable no-console */
   engineInfos() {
     return Promise.resolve([defaultEngine]);
   },
   restartEngine(/* engineId: EngineId */) {
-    throw new Error(`Not supported on Browser version: restartEngine`);
+    throw new Error("Not supported on Browser version: restartEngine");
   },
   openEngineDirectory(/* engineId: EngineId */) {
-    throw new Error(`Not supported on Browser version: openEngineDirectory`);
+    throw new Error("Not supported on Browser version: openEngineDirectory");
   },
   async hotkeySettings(newData?: HotkeySettingType) {
     if (newData != undefined) {
@@ -245,10 +241,7 @@ export const api: Sandbox = {
     return checkFileExistsImpl(file);
   },
   changePinWindow() {
-    throw new Error(`Not supported on Browser version: changePinWindow`);
-  },
-  getDefaultHotkeySettings() {
-    return Promise.resolve(defaultHotkeySettings);
+    throw new Error("Not supported on Browser version: changePinWindow");
   },
   getDefaultToolbarSetting() {
     return Promise.resolve(defaultToolbarButtonSetting);
@@ -279,15 +272,18 @@ export const api: Sandbox = {
     return;
   },
   installVvppEngine(/* path: string */) {
-    throw new Error(`Not supported on Browser version: installVvppEngine`);
+    throw new Error("Not supported on Browser version: installVvppEngine");
   },
   uninstallVvppEngine(/* engineId: EngineId */) {
-    throw new Error(`Not supported on Browser version: uninstallVvppEngine`);
+    throw new Error("Not supported on Browser version: uninstallVvppEngine");
   },
   validateEngineDir(/* engineDir: string */) {
-    throw new Error(`Not supported on Browser version: validateEngineDir`);
+    throw new Error("Not supported on Browser version: validateEngineDir");
   },
   reloadApp(/* obj: { isMultiEngineOffMode: boolean } */) {
-    throw new Error(`Not supported on Browser version: reloadApp`);
+    throw new Error("Not supported on Browser version: reloadApp");
+  },
+  getPathForFile(/* file: File */) {
+    throw new Error("Not supported on Browser version: getPathForFile");
   },
 };

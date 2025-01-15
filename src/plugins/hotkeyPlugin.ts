@@ -9,12 +9,14 @@
  */
 import { Plugin, inject, onMounted, onUnmounted } from "vue";
 import hotkeys from "hotkeys-js";
+import { useAnalytics } from "@/composables/useAnalytics";
 import {
   HotkeyActionNameType,
   HotkeyCombination,
   HotkeySettingType,
-} from "@/type/preload";
+} from "@/domain/hotkeyAction";
 import { createLogger } from "@/domain/frontend/log";
+import { Brand } from "@/type/utility";
 
 const hotkeyManagerKey = "hotkeyManager";
 export const useHotkeyManager = () => {
@@ -35,7 +37,7 @@ export const useHotkeyManager = () => {
 
 type Editor = "talk" | "song";
 
-type BindingKey = string & { __brand: "BindingKey" }; // BindingKey専用のブランド型
+type BindingKey = Brand<string, "BindingKey">;
 
 /**
  * ショートカットキーの処理を登録するための型。
@@ -212,6 +214,10 @@ export class HotkeyManager {
             }
           }
           e.preventDefault();
+          void useAnalytics().trackEvent("aisp_hotkey_press", {
+            action: setting.action,
+            combination: setting.combination,
+          });
           action.callback(e);
         },
       );

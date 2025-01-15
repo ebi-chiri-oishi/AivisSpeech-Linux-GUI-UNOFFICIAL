@@ -5,7 +5,6 @@ import {
   EngineId,
   EngineInfo,
   EngineSettingType,
-  HotkeySettingType,
   MessageBoxReturnValue,
   NativeThemeType,
   TextAsset,
@@ -13,6 +12,7 @@ import {
 } from "@/type/preload";
 import { AltPortInfos } from "@/store/type";
 import { Result } from "@/type/result";
+import { HotkeySettingType } from "@/domain/hotkeyAction";
 
 /**
  * invoke, handle
@@ -31,21 +31,6 @@ export type IpcIHData = {
   GET_ALT_PORT_INFOS: {
     args: [];
     return: AltPortInfos;
-  };
-
-  SHOW_AUDIO_SAVE_DIALOG: {
-    args: [
-      obj: {
-        title: string;
-        defaultPath?: string;
-      },
-    ];
-    return?: string;
-  };
-
-  SHOW_TEXT_SAVE_DIALOG: {
-    args: [obj: { title: string; defaultPath?: string }];
-    return?: string;
   };
 
   SHOW_SAVE_DIRECTORY_DIALOG: {
@@ -98,6 +83,18 @@ export type IpcIHData = {
     return: MessageBoxReturnValue;
   };
 
+  SHOW_EXPORT_FILE_DIALOG: {
+    args: [
+      obj: {
+        title: string;
+        defaultPath?: string;
+        extensionName: string;
+        extensions: string[];
+      },
+    ];
+    return?: string;
+  };
+
   IS_AVAILABLE_GPU_MODE: {
     args: [];
     return: boolean;
@@ -148,6 +145,11 @@ export type IpcIHData = {
     return: void;
   };
 
+  OPEN_DEFAULT_ENGINE_LOG_DIRECTORY: {
+    args: [];
+    return: void;
+  };
+
   ENGINE_INFOS: {
     args: [];
     return: EngineInfo[];
@@ -175,11 +177,6 @@ export type IpcIHData = {
 
   HOTKEY_SETTINGS: {
     args: [obj: { newData?: HotkeySettingType }];
-    return: HotkeySettingType[];
-  };
-
-  GET_DEFAULT_HOTKEY_SETTINGS: {
-    args: [];
     return: HotkeySettingType[];
   };
 
@@ -249,7 +246,7 @@ export type IpcIHData = {
  */
 export type IpcSOData = {
   LOAD_PROJECT_FILE: {
-    args: [obj: { filePath?: string; confirm?: boolean }];
+    args: [obj: { filePath: string }];
     return: void;
   };
 

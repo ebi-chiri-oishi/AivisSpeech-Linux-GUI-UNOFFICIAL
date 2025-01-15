@@ -187,13 +187,13 @@ const projectFileErrorMessage = computed(() => {
 
 type Project =
   | {
-      type: "utaformatix";
-      project: UfProject;
-    }
+    type: "utaformatix";
+    project: UfProject;
+  }
   | {
-      type: "vvproj";
-      project: LatestProjectType;
-    };
+    type: "vvproj";
+    project: LatestProjectType;
+  };
 
 // データ
 const project = ref<Project | null>(null);
@@ -306,7 +306,7 @@ const handleImportTrack = () => {
     throw new Error("project or selected track is not set");
   }
   // トラックをインポート
-  const trackIndexes = selectedTrackIndexes.value.toSorted();
+  const trackIndexes = selectedTrackIndexes.value.toSorted((a, b) => a - b);
   if (project.value.type === "vvproj") {
     void store.actions.COMMAND_IMPORT_VOICEVOX_PROJECT({
       project: project.value.project,

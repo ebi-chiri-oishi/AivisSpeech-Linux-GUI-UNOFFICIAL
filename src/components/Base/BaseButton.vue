@@ -31,7 +31,7 @@ defineEmits<{
 
 .button {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
   text-wrap: nowrap;
   height: vars.$size-control;
@@ -40,6 +40,7 @@ defineEmits<{
   gap: vars.$gap-1;
   border: 1px solid;
   cursor: pointer;
+  transition: background-color 0.15s ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 
   &:active:not(:disabled) {

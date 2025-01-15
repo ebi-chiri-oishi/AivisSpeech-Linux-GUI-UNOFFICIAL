@@ -274,7 +274,7 @@ test("getToolbarButtonName", () => {
   );
   expect(getToolbarButtonName("EXPORT_AUDIO_ALL")).toBe("全部書き出し");
   expect(getToolbarButtonName("EXPORT_AUDIO_CONNECT_ALL")).toBe(
-    "音声をつなげて書き出し",
+    "音声を繋げて書き出し",
   );
   expect(getToolbarButtonName("存在しないタグ" as ToolbarButtonTagType)).toBe(
     undefined,
@@ -342,7 +342,7 @@ describe("filterCharacterInfosByStyleType", () => {
     });
   }
 
-  test(`singerLikeを指定するとsingとhummingのキャラクターが取得できる`, () => {
+  test("singerLikeを指定するとsingとhummingのキャラクターが取得できる", () => {
     const filtered = filterCharacterInfosByStyleType(
       characterInfos,
       "singerLike",
@@ -353,7 +353,7 @@ describe("filterCharacterInfosByStyleType", () => {
     expect(filtered[2].metas.styles.length).toBe(2);
   });
 
-  test(`talkを指定するとsingerLike以外のキャラクターが取得できる`, () => {
+  test("talkを指定するとsingerLike以外のキャラクターが取得できる", () => {
     const filtered = filterCharacterInfosByStyleType(characterInfos, "talk");
     expect(filtered.length).toBe(3);
     expect(filtered[0].metas.styles.length).toBe(1);

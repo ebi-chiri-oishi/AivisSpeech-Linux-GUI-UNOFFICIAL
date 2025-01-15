@@ -1,5 +1,6 @@
 import { Plugin } from "vue";
 import { debounce } from "quasar";
+import { useAnalytics } from "@/composables/useAnalytics";
 import { Store } from "@/store/vuex";
 import { AllActions, AllGetters, AllMutations, State } from "@/store/type";
 
@@ -9,8 +10,11 @@ export const ipcMessageReceiver: Plugin = {
     options: { store: Store<State, AllGetters, AllActions, AllMutations> },
   ) => {
     window.backend.onReceivedIPCMsg({
-      LOAD_PROJECT_FILE: (_, { filePath, confirm } = {}) =>
-        void options.store.actions.LOAD_PROJECT_FILE({ filePath, confirm }),
+      LOAD_PROJECT_FILE: (_, { filePath }) =>
+        void options.store.actions.LOAD_PROJECT_FILE({
+          type: "path",
+          filePath,
+        }),
 
       DETECT_MAXIMIZED: () => options.store.actions.DETECT_MAXIMIZED(),
 
@@ -38,8 +42,10 @@ export const ipcMessageReceiver: Plugin = {
       },
 
       DETECT_RESIZED: debounce(
-        (_, { width, height }: { width: number; height: number }) =>
-          window.dataLayer?.push({ event: "windowResize", width, height }),
+        (_, { width, height }: { width: number; height: number }) => {
+          // window.dataLayer?.push({ event: "windowResize", width, height });
+          void useAnalytics().trackEvent("aisp_window_resize", { width, height });
+        },
         300,
       ),
     });

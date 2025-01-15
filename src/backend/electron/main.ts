@@ -4,21 +4,12 @@ import path from "path";
 
 import fs from "fs";
 import { pathToFileURL } from "url";
-import {
-  app,
-  protocol,
-  BrowserWindow,
-  dialog,
-  Menu,
-  shell,
-  nativeTheme,
-  net,
-} from "electron";
+import { app, dialog, Menu, nativeTheme, net, protocol, shell } from "electron";
 import installExtension, { VUEJS_DEVTOOLS } from "electron-devtools-installer";
 
 import log from "electron-log/main";
 import dayjs from "dayjs";
-import windowStateKeeper from "electron-window-state";
+import * as Sentry from "@sentry/electron/main";
 import { hasSupportedGpu } from "./device";
 import {
   getEngineInfoManager,
@@ -29,23 +20,26 @@ import {
   initializeEngineProcessManager,
 } from "./manager/engineProcessManager";
 import { initializeVvppManager, isVvppFile } from "./manager/vvppManager";
+import {
+  getWindowManager,
+  initializeWindowManager,
+} from "./manager/windowManager";
 import configMigration014 from "./configMigration014";
 import { initializeRuntimeInfoManager } from "./manager/RuntimeInfoManager";
 import { registerIpcMainHandle, ipcMainSendProxy, IpcMainHandle } from "./ipc";
 import { getConfigManager } from "./electronConfig";
 import { getEngineAndVvppController } from "./engineAndVvppController";
 import { writeFileSafely } from "./fileHelper";
+import { isProduction } from "@/helpers/platform";
 import { failure, success } from "@/type/result";
 import { AssetTextFileNames } from "@/type/staticResources";
 import {
   EngineInfo,
   SystemError,
-  defaultHotkeySettings,
   defaultToolbarButtonSetting,
   EngineId,
   TextAsset,
 } from "@/type/preload";
-import { themes } from "@/domain/theme";
 import { isMac } from "@/helpers/platform";
 
 type SingleInstanceLockData = {
@@ -96,6 +90,17 @@ if (!isDevelopment) {
   configMigration014({ fixedUserDataDir, beforeUserDataDir }); // 以前のファイルがあれば持ってくる
 }
 
+// Sentry によるエラートラッキングを開始 (production 環境のみ有効)
+// app.setPath("userData") を設定した後に呼ぶ必要がある
+// ref: https://docs.sentry.io/platforms/javascript/guides/electron/
+if (isProduction) {
+  Sentry.init({
+    dsn: "https://ab3b3a5b0e9d1c90dae483f740dbc78b@o4508551725383680.ingest.us.sentry.io/4508555292901376",
+    release: `AivisSpeech@${app.getVersion() === "999.999.999" ? "latest" : app.getVersion()}`,
+    environment: "production",
+  });
+}
+
 log.initialize({ preload: false });
 // silly 以上のログをコンソールに出力
 log.transports.console.format = "[{y}/{m}/{d} {h}:{i}:{s}] {level}: {text}";
@@ -111,8 +116,6 @@ if (errorForRemoveBeforeUserDataDir != undefined) {
   log.error(errorForRemoveBeforeUserDataDir);
 }
 
-let win: BrowserWindow;
-
 process.on("uncaughtException", (error) => {
   log.error(error);
 
@@ -121,7 +124,7 @@ process.on("uncaughtException", (error) => {
   } else {
     const { message, name } = error;
     let detailedMessage = "";
-    detailedMessage += `メインプロセスで原因不明のエラーが発生しました。\n`;
+    detailedMessage += "メインプロセスで原因不明のエラーが発生しました。\n";
     detailedMessage += `エラー名: ${name}\n`;
     detailedMessage += `メッセージ: ${message}\n`;
     if (error.stack) {
@@ -152,7 +155,28 @@ protocol.registerSchemesAsPrivileged([
   { scheme: "app", privileges: { secure: true, standard: true, stream: true } },
 ]);
 
-const firstUrl = import.meta.env.VITE_DEV_SERVER_URL ?? "app://./index.html";
+// ソフトウェア起動時はプロトコルを app にする
+void app.whenReady().then(() => {
+  protocol.handle("app", (request) => {
+    // 読み取り先のファイルがインストールディレクトリ内であることを確認する
+    // ref: https://www.electronjs.org/ja/docs/latest/api/protocol#protocolhandlescheme-handler
+    const { pathname } = new URL(request.url);
+    const pathToServe = path.resolve(path.join(__dirname, pathname));
+    const relativePath = path.relative(__dirname, pathToServe);
+    const isUnsafe =
+      path.isAbsolute(relativePath) ||
+      relativePath.startsWith("..") ||
+      relativePath === "";
+    if (isUnsafe) {
+      log.error(`Bad Request URL: ${request.url}`);
+      return new Response("bad", {
+        status: 400,
+        headers: { "content-type": "text/html" },
+      });
+    }
+    return net.fetch(pathToFileURL(pathToServe).toString());
+  });
+});
 
 // engine
 const vvppEngineDir = path.join(app.getPath("userData"), "vvpp-engines");
@@ -167,15 +191,26 @@ const onEngineProcessError = (engineInfo: EngineInfo, error: Error) => {
 
   // winが作られる前にエラーが発生した場合はwinへの通知を諦める
   // FIXME: winが作られた後にエンジンを起動させる
+  const win = windowManager.win;
   if (win != undefined) {
     ipcMainSendProxy.DETECTED_ENGINE_ERROR(win, { engineId });
   } else {
-    log.error(`onEngineProcessError: win is undefined`);
+    log.error("onEngineProcessError: win is undefined");
   }
 
   dialog.showErrorBox("音声合成エンジンエラー", error.message);
 };
 
+const appState = {
+  willQuit: false,
+};
+
+initializeWindowManager({
+  appStateGetter: () => appState,
+  isDevelopment,
+  isTest,
+  staticDir: __static,
+});
 initializeRuntimeInfoManager({
   runtimeInfoPath: path.join(app.getPath("userData"), "runtime-info.json"),
   appVersion: app.getVersion(),
@@ -188,6 +223,7 @@ initializeEngineProcessManager({ onEngineProcessError });
 initializeVvppManager({ vvppEngineDir });
 
 const configManager = getConfigManager();
+const windowManager = getWindowManager();
 const engineInfoManager = getEngineInfoManager();
 const engineProcessManager = getEngineProcessManager();
 const engineAndVvppController = getEngineAndVvppController();
@@ -208,10 +244,10 @@ function openEngineDirectory(engineId: EngineId) {
 function checkMultiEngineEnabled(): boolean {
   const enabled = configManager.get("enableMultiEngine");
   if (!enabled) {
-    dialog.showMessageBoxSync(win, {
+    windowManager.showMessageBoxSync({
       type: "info",
       title: "マルチエンジン機能が無効です",
-      message: `マルチエンジン機能が無効です。vvpp ファイルを使用するには設定からマルチエンジン機能を有効にしてください。`,
+      message: "マルチエンジン機能が無効です。vvpp ファイルを使用するには設定からマルチエンジン機能を有効にしてください。",
       buttons: ["OK"],
       noLink: true,
     });
@@ -219,148 +255,7 @@ function checkMultiEngineEnabled(): boolean {
   return enabled;
 }
 
-const appState = {
-  willQuit: false,
-};
 let filePathOnMac: string | undefined = undefined;
-// create window
-async function createWindow() {
-  const mainWindowState = windowStateKeeper({
-    defaultWidth: 1024,
-    defaultHeight: 630,
-  });
-
-  const currentTheme = configManager.get("currentTheme");
-  const backgroundColor = themes.find((value) => value.name == currentTheme)
-    ?.colors.background;
-
-  win = new BrowserWindow({
-    x: mainWindowState.x,
-    y: mainWindowState.y,
-    width: mainWindowState.width,
-    height: mainWindowState.height,
-    frame: false,
-    titleBarStyle: "hidden",
-    trafficLightPosition: { x: 10, y: 10 },
-    minWidth: 320,
-    show: false,
-    backgroundColor,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-    },
-    icon: path.join(__static, "icon.png"),
-  });
-
-  let projectFilePath = "";
-  if (isMac) {
-    if (filePathOnMac) {
-      if (filePathOnMac.endsWith(".aisp")) {
-        projectFilePath = filePathOnMac;
-      }
-      filePathOnMac = undefined;
-    }
-  } else {
-    if (process.argv.length >= 2) {
-      const filePath = process.argv[1];
-      if (
-        fs.existsSync(filePath) &&
-        fs.statSync(filePath).isFile() &&
-        filePath.endsWith(".aisp")
-      ) {
-        projectFilePath = filePath;
-      }
-    }
-  }
-
-  // ソフトウェア起動時はプロトコルを app にする
-  if (import.meta.env.VITE_DEV_SERVER_URL == undefined) {
-    protocol.handle("app", (request) => {
-      // 読み取り先のファイルがインストールディレクトリ内であることを確認する
-      // ref: https://www.electronjs.org/ja/docs/latest/api/protocol#protocolhandlescheme-handler
-      const { pathname } = new URL(request.url);
-      const pathToServe = path.resolve(path.join(__dirname, pathname));
-      const relativePath = path.relative(__dirname, pathToServe);
-      const isUnsafe =
-        path.isAbsolute(relativePath) ||
-        relativePath.startsWith("..") ||
-        relativePath === "";
-      if (isUnsafe) {
-        log.error(`Bad Request URL: ${request.url}`);
-        return new Response("bad", {
-          status: 400,
-          headers: { "content-type": "text/html" },
-        });
-      }
-      return net.fetch(pathToFileURL(pathToServe).toString());
-    });
-  }
-
-  await loadUrl({ projectFilePath });
-
-  if (isDevelopment && !isTest) win.webContents.openDevTools();
-
-  win.on("maximize", () => {
-    ipcMainSendProxy.DETECT_MAXIMIZED(win);
-  });
-  win.on("unmaximize", () => {
-    ipcMainSendProxy.DETECT_UNMAXIMIZED(win);
-  });
-  win.on("enter-full-screen", () => {
-    ipcMainSendProxy.DETECT_ENTER_FULLSCREEN(win);
-  });
-  win.on("leave-full-screen", () => {
-    ipcMainSendProxy.DETECT_LEAVE_FULLSCREEN(win);
-  });
-  win.on("always-on-top-changed", () => {
-    win.isAlwaysOnTop()
-      ? ipcMainSendProxy.DETECT_PINNED(win)
-      : ipcMainSendProxy.DETECT_UNPINNED(win);
-  });
-  win.on("close", (event) => {
-    if (!appState.willQuit) {
-      event.preventDefault();
-      ipcMainSendProxy.CHECK_EDITED_AND_NOT_SAVE(win, {
-        closeOrReload: "close",
-      });
-      return;
-    }
-  });
-
-  win.on("resize", () => {
-    const windowSize = win.getSize();
-    ipcMainSendProxy.DETECT_RESIZED(win, {
-      width: windowSize[0],
-      height: windowSize[1],
-    });
-  });
-
-  mainWindowState.manage(win);
-}
-
-/**
- * 画面の読み込みを開始する。
- * @param obj.isMultiEngineOffMode マルチエンジンオフモードにするかどうか。無指定時はfalse扱いになる。
- * @param obj.projectFilePath 初期化時に読み込むプロジェクトファイル。無指定時は何も読み込まない。
- * @returns ロードの完了を待つPromise。
- */
-async function loadUrl(obj: {
-  isMultiEngineOffMode?: boolean;
-  projectFilePath?: string;
-}) {
-  const url = new URL(firstUrl);
-  url.searchParams.append(
-    "isMultiEngineOffMode",
-    (obj?.isMultiEngineOffMode ?? false).toString(),
-  );
-  url.searchParams.append("projectFilePath", obj?.projectFilePath ?? "");
-  return win.loadURL(url.toString());
-}
-
-// 開始。その他の準備が完了した後に呼ばれる。
-async function start() {
-  await engineAndVvppController.launchEngines();
-  await createWindow();
-}
 
 const menuTemplateForMac: Electron.MenuItemConstructorOptions[] = [
   {
@@ -417,7 +312,7 @@ const retryShowSaveDialogWhileSafeDir = async <
    */
   const showWarningDialog = async () => {
     const productName = app.getName().toUpperCase();
-    const warningResult = await dialog.showMessageBox(win, {
+    const warningResult = await windowManager.showMessageBox({
       message: `指定された保存先は${productName}により自動的に削除される可能性があります。\n他の場所に保存することをおすすめします。`,
       type: "warning",
       buttons: ["保存場所を変更", "無視して保存"],
@@ -470,41 +365,12 @@ registerIpcMainHandle<IpcMainHandle>({
     return engineInfoManager.altPortInfos;
   },
 
-  SHOW_AUDIO_SAVE_DIALOG: async (_, { title, defaultPath }) => {
-    const result = await retryShowSaveDialogWhileSafeDir(() =>
-      dialog.showSaveDialog(win, {
-        title,
-        defaultPath,
-        filters: [
-          {
-            name: "WAV File",
-            extensions: ["wav"],
-          },
-        ],
-        properties: ["createDirectory"],
-      }),
-    );
-    return result.filePath;
-  },
-
-  SHOW_TEXT_SAVE_DIALOG: async (_, { title, defaultPath }) => {
-    const result = await retryShowSaveDialogWhileSafeDir(() =>
-      dialog.showSaveDialog(win, {
-        title,
-        defaultPath,
-        filters: [{ name: "Text File", extensions: ["txt"] }],
-        properties: ["createDirectory"],
-      }),
-    );
-    return result.filePath;
-  },
-
   /**
    * 保存先になるディレクトリを選ぶダイアログを表示する。
    */
   SHOW_SAVE_DIRECTORY_DIALOG: async (_, { title }) => {
     const result = await retryShowSaveDialogWhileSafeDir(() =>
-      dialog.showOpenDialog(win, {
+      windowManager.showOpenDialog({
         title,
         properties: [
           "openDirectory",
@@ -520,7 +386,7 @@ registerIpcMainHandle<IpcMainHandle>({
   },
 
   SHOW_VVPP_OPEN_DIALOG: async (_, { title, defaultPath }) => {
-    const result = await dialog.showOpenDialog(win, {
+    const result = await windowManager.showOpenDialog({
       title,
       defaultPath,
       filters: [
@@ -536,7 +402,7 @@ registerIpcMainHandle<IpcMainHandle>({
    * 保存先として選ぶ場合は SHOW_SAVE_DIRECTORY_DIALOG を使うべき。
    */
   SHOW_OPEN_DIRECTORY_DIALOG: async (_, { title }) => {
-    const result = await dialog.showOpenDialog(win, {
+    const result = await windowManager.showOpenDialog({
       title,
       properties: [
         "openDirectory",
@@ -552,7 +418,7 @@ registerIpcMainHandle<IpcMainHandle>({
 
   SHOW_PROJECT_SAVE_DIALOG: async (_, { title, defaultPath }) => {
     const result = await retryShowSaveDialogWhileSafeDir(() =>
-      dialog.showSaveDialog(win, {
+      windowManager.showSaveDialog({
         title,
         defaultPath,
         filters: [{ name: "AivisSpeech Project file", extensions: ["aisp"] }],
@@ -566,7 +432,7 @@ registerIpcMainHandle<IpcMainHandle>({
   },
 
   SHOW_PROJECT_LOAD_DIALOG: async (_, { title }) => {
-    const result = await dialog.showOpenDialog(win, {
+    const result = await windowManager.showOpenDialog({
       title,
       filters: [{ name: "AivisSpeech Project file", extensions: ["aisp"] }],
       properties: ["openFile", "createDirectory", "treatPackageAsDirectory"],
@@ -578,7 +444,7 @@ registerIpcMainHandle<IpcMainHandle>({
   },
 
   SHOW_WARNING_DIALOG: (_, { title, message }) => {
-    return dialog.showMessageBox(win, {
+    return windowManager.showMessageBox({
       type: "warning",
       title,
       message,
@@ -586,7 +452,7 @@ registerIpcMainHandle<IpcMainHandle>({
   },
 
   SHOW_ERROR_DIALOG: (_, { title, message }) => {
-    return dialog.showMessageBox(win, {
+    return windowManager.showMessageBox({
       type: "error",
       title,
       message,
@@ -594,11 +460,26 @@ registerIpcMainHandle<IpcMainHandle>({
   },
 
   SHOW_IMPORT_FILE_DIALOG: (_, { title, name, extensions }) => {
-    return dialog.showOpenDialogSync(win, {
+    return windowManager.showOpenDialogSync({
       title,
       filters: [{ name: name ?? "Text", extensions: extensions ?? ["txt"] }],
       properties: ["openFile", "createDirectory", "treatPackageAsDirectory"],
     })?.[0];
+  },
+
+  SHOW_EXPORT_FILE_DIALOG: async (
+    _,
+    { title, defaultPath, extensionName, extensions },
+  ) => {
+    const result = await retryShowSaveDialogWhileSafeDir(() =>
+      windowManager.showSaveDialog({
+        title,
+        defaultPath,
+        filters: [{ name: extensionName, extensions: extensions }],
+        properties: ["createDirectory"],
+      }),
+    );
+    return result.filePath;
   },
 
   IS_AVAILABLE_GPU_MODE: () => {
@@ -606,51 +487,56 @@ registerIpcMainHandle<IpcMainHandle>({
   },
 
   IS_MAXIMIZED_WINDOW: () => {
-    return win.isMaximized();
+    return windowManager.isMaximized();
   },
 
   CLOSE_WINDOW: () => {
     appState.willQuit = true;
-    win.destroy();
+    windowManager.destroyWindow();
   },
   MINIMIZE_WINDOW: () => {
-    win.minimize();
+    windowManager.minimize();
   },
   TOGGLE_MAXIMIZE_WINDOW: () => {
-    // 全画面表示中は、全画面表示解除のみを行い、最大化解除処理は実施しない
-    if (win.isFullScreen()) {
-      win.setFullScreen(false);
-    } else if (win.isMaximized()) {
-      win.unmaximize();
-    } else {
-      win.maximize();
-    }
+    windowManager.toggleMaximizeWindow();
   },
   TOGGLE_FULLSCREEN: () => {
-    if (win.isFullScreen()) {
-      win.setFullScreen(false);
-    } else {
-      win.setFullScreen(true);
-    }
+    windowManager.toggleFullScreen();
   },
   /** UIの拡大 */
   ZOOM_IN: () => {
-    win.webContents.setZoomFactor(
-      Math.min(Math.max(win.webContents.getZoomFactor() + 0.1, 0.5), 3),
-    );
+    windowManager.zoomIn();
   },
   /** UIの縮小 */
   ZOOM_OUT: () => {
-    win.webContents.setZoomFactor(
-      Math.min(Math.max(win.webContents.getZoomFactor() - 0.1, 0.5), 3),
-    );
+    windowManager.zoomOut();
   },
   /** UIの拡大率リセット */
   ZOOM_RESET: () => {
-    win.webContents.setZoomFactor(1);
+    windowManager.zoomReset();
   },
+
   OPEN_LOG_DIRECTORY: () => {
     void shell.openPath(app.getPath("logs"));
+  },
+  OPEN_DEFAULT_ENGINE_LOG_DIRECTORY: () => {
+    // AivisSpeech Engine のログ保存先ディレクトリを OS ごとに取得
+    let logPath = "";
+    switch (process.platform) {
+      case "win32":
+        logPath = path.join(app.getPath("appData"), "AivisSpeech-Engine", "Logs");
+        break;
+      case "darwin":
+        logPath = path.join(app.getPath("appData"), "AivisSpeech-Engine", "Logs");
+        break;
+      case "linux":
+        logPath = path.join(app.getPath("home"), ".local", "share", "AivisSpeech-Engine", "Logs");
+        break;
+      default:
+        return;
+    }
+    // ログディレクトリを開く
+    void shell.openPath(logPath);
   },
 
   ENGINE_INFOS: () => {
@@ -681,22 +567,14 @@ registerIpcMainHandle<IpcMainHandle>({
   },
 
   ON_VUEX_READY: () => {
-    win.show();
+    windowManager.show();
   },
 
   CHECK_FILE_EXISTS: (_, { file }) => {
     return fs.existsSync(file);
   },
   CHANGE_PIN_WINDOW: () => {
-    if (win.isAlwaysOnTop()) {
-      win.setAlwaysOnTop(false);
-    } else {
-      win.setAlwaysOnTop(true);
-    }
-  },
-
-  GET_DEFAULT_HOTKEY_SETTINGS: () => {
-    return defaultHotkeySettings;
+    windowManager.togglePinWindow();
   },
 
   GET_DEFAULT_TOOLBAR_SETTING: () => {
@@ -733,24 +611,7 @@ registerIpcMainHandle<IpcMainHandle>({
   },
 
   RELOAD_APP: async (_, { isMultiEngineOffMode }) => {
-    win.hide(); // FIXME: ダミーページ表示のほうが良い
-
-    // 一旦適当なURLに飛ばしてページをアンロードする
-    await win.loadURL("about:blank");
-
-    log.info("Checking ENGINE status before reload app");
-    const engineCleanupResult = engineAndVvppController.cleanupEngines();
-
-    // エンジンの停止とエンジン終了後処理の待機
-    if (engineCleanupResult != "alreadyCompleted") {
-      await engineCleanupResult;
-    }
-    log.info("Post engine kill process done. Now reloading app");
-
-    await engineAndVvppController.launchEngines();
-
-    await loadUrl({ isMultiEngineOffMode: !!isMultiEngineOffMode });
-    win.show();
+    await windowManager.reload(isMultiEngineOffMode);
   },
 
   WRITE_FILE: (_, { filePath, buffer }) => {
@@ -811,7 +672,9 @@ app.on("window-all-closed", () => {
 app.on("before-quit", async (event) => {
   if (!appState.willQuit) {
     event.preventDefault();
-    ipcMainSendProxy.CHECK_EDITED_AND_NOT_SAVE(win, { closeOrReload: "close" });
+    ipcMainSendProxy.CHECK_EDITED_AND_NOT_SAVE(windowManager.getWindow(), {
+      closeOrReload: "close",
+    });
     return;
   }
 
@@ -860,7 +723,7 @@ app.once("will-finish-launching", () => {
   });
 });
 
-app.on("ready", async () => {
+void app.whenReady().then(async () => {
   log.info(`AivisSpeech version ${app.getVersion()}`);
 
   await configManager.initialize().catch(async (e) => {
@@ -916,7 +779,7 @@ app.on("ready", async () => {
         .showMessageBox({
           type: "error",
           title: "設定ファイルの読み込みエラー（開発者向け案内）",
-          message: `設定ファイルの読み込みに失敗しました。設定ファイルの名前を変更するか、設定をリセットしてください。`,
+          message: "設定ファイルの読み込みに失敗しました。設定ファイルの名前を変更するか、設定をリセットしてください。",
           buttons: [
             "何もせず終了",
             "設定ファイルのフォルダを開いて終了",
@@ -951,6 +814,41 @@ app.on("ready", async () => {
     }
   }
 
+  // VVPPがデフォルトエンジンに指定されていたらインストールする
+  // NOTE: この機能は工事中。参照: https://github.com/VOICEVOX/voicevox/issues/1194
+  const packageInfos =
+    await engineAndVvppController.fetchInsallablePackageInfos();
+  for (const { engineName, packageInfo } of packageInfos) {
+    // インストールするか確認
+    const result = dialog.showMessageBoxSync({
+      type: "info",
+      title: "デフォルトエンジンのインストール",
+      message: `${engineName} をインストールしますか？`,
+      buttons: ["インストール", "キャンセル"],
+      cancelId: 1,
+    });
+    if (result == 1) {
+      continue;
+    }
+
+    // ダウンロードしてインストールする
+    let lastLogTime = 0; // とりあえずログを0.1秒に1回だけ出力する
+    await engineAndVvppController.downloadAndInstallVvppEngine(
+      app.getPath("downloads"),
+      packageInfo,
+      {
+        onProgress: ({ type, progress }) => {
+          if (Date.now() - lastLogTime > 100) {
+            log.info(
+              `VVPP default engine progress: ${type}: ${Math.floor(progress)}%`,
+            );
+            lastLogTime = Date.now();
+          }
+        },
+      },
+    );
+  }
+
   // runEngineAllの前にVVPPを読み込む
   let filePath: string | undefined;
   if (process.platform === "darwin") {
@@ -962,6 +860,7 @@ app.on("ready", async () => {
   }
 
   // 多重起動防止
+  // TODO: readyを待たずにもっと早く実行すべき
   if (
     !isDevelopment &&
     !isTest &&
@@ -983,17 +882,23 @@ app.on("ready", async () => {
       await engineAndVvppController.installVvppEngineWithWarning({
         vvppPath: filePath,
         reloadNeeded: false,
-        win,
       });
     }
   }
 
-  void start();
+  await engineAndVvppController.launchEngines();
+  await windowManager.createWindow(filePath);
 });
 
 // 他のプロセスが起動したとき、`requestSingleInstanceLock`経由で`rawData`が送信される。
 app.on("second-instance", async (_event, _argv, _workDir, rawData) => {
   const data = rawData as SingleInstanceLockData;
+  const win = windowManager.win;
+  if (win == undefined) {
+    // TODO: 起動シーケンス中の場合はWindowが作られるまで待つ
+    log.warn("A 'second-instance' event was emitted but there is no window.");
+    return;
+  }
   if (!data.filePath) {
     log.info("No file path sent");
   } else if (isVvppFile(data.filePath)) {
@@ -1008,20 +913,15 @@ app.on("second-instance", async (_event, _argv, _workDir, rawData) => {
             closeOrReload: "reload",
           });
         },
-        win,
       });
     }
   } else if (data.filePath.endsWith(".aisp")) {
     log.info("Second instance launched with aisp file");
     ipcMainSendProxy.LOAD_PROJECT_FILE(win, {
       filePath: data.filePath,
-      confirm: true,
     });
   }
-  if (win) {
-    if (win.isMinimized()) win.restore();
-    win.focus();
-  }
+  windowManager.restoreAndFocus();
 });
 
 if (isDevelopment) {

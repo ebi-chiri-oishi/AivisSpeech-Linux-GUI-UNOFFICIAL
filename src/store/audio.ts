@@ -1,4 +1,3 @@
-import Encoding from "encoding-japanese";
 import { createUILockAction, withProgress } from "./ui";
 import {
   AudioItem,
@@ -64,6 +63,7 @@ import { cloneWithUnwrapProxy } from "@/helpers/cloneWithUnwrapProxy";
 import { UnreachableError } from "@/type/utility";
 import { errorToMessage } from "@/helpers/errorHelper";
 import path from "@/helpers/path";
+import { generateTextFileData } from "@/helpers/fileDataGenerator";
 
 function generateAudioKey() {
   return AudioKey(uuid4());
@@ -116,7 +116,7 @@ function parseTextFile(
   const seps = [",", "\r\n", "\n"];
   let lastVoice =
     initVoice ?? uuid2Voice.get(userOrderedCharacterInfos[0].metas.speakerUuid);
-  if (lastVoice == undefined) throw new Error(`lastStyle is undefined.`);
+  if (lastVoice == undefined) throw new Error("lastStyle is undefined.");
   for (const splitText of body.split(new RegExp(`${seps.join("|")}`, "g"))) {
     const voice = name2Voice.get(splitText);
     if (voice != undefined) {
@@ -129,6 +129,7 @@ function parseTextFile(
   return audioItems;
 }
 
+// TODO: src/sing/fileUtils.tsのgenerateUniqueFilePathと統合する
 async function changeFileTailToNonExistent(
   filePath: string,
   extension: string,
@@ -147,29 +148,13 @@ export async function writeTextFile(obj: {
   text: string;
   encoding?: EncodingType;
 }) {
-  obj.encoding ??= "UTF-8";
-
-  const textBlob = {
-    "UTF-8": (text: string) => {
-      const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
-      return new Blob([bom, text], {
-        type: "text/plain;charset=UTF-8",
-      });
-    },
-    Shift_JIS: (text: string) => {
-      const sjisArray = Encoding.convert(Encoding.stringToCode(text), {
-        to: "SJIS",
-        type: "arraybuffer",
-      });
-      return new Blob([new Uint8Array(sjisArray)], {
-        type: "text/plain;charset=Shift_JIS",
-      });
-    },
-  }[obj.encoding](obj.text);
-
+  const textFileData = await generateTextFileData({
+    text: obj.text,
+    encoding: obj.encoding,
+  });
   return window.backend.writeFile({
     filePath: obj.filePath,
-    buffer: await textBlob.arrayBuffer(),
+    buffer: textFileData,
   });
 }
 
@@ -346,7 +331,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
                 ...(useResourceUrl && { resourceFormat: "url" }),
               })
               .catch((error) => {
-                window.backend.logError(error, `Failed to get speakerInfo.`);
+                window.backend.logError(error, "Failed to get speakerInfo.");
                 throw error;
               });
             speakerStylePromise = speakerInfoPromise.then((speakerInfo) =>
@@ -363,7 +348,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
                 ...(useResourceUrl && { resourceFormat: "url" }),
               })
               .catch((error) => {
-                window.backend.logError(error, `Failed to get singerInfo.`);
+                window.backend.logError(error, "Failed to get singerInfo.");
                 throw error;
               });
             singerStylePromise = singerInfoPromise.then((singerInfo) =>
@@ -407,7 +392,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
             ? await instance.invoke("singersSingersGet")({})
             : [],
         ]).catch((error) => {
-          window.backend.logError(error, `Failed to get Speakers.`);
+          window.backend.logError(error, "Failed to get Speakers.");
           throw error;
         });
 
@@ -570,9 +555,10 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
         audioKeys,
       });
       await actions
-        .INITIALIZE_ENGINE_SPEAKER({
+        .INITIALIZE_ENGINE_CHARACTER({
           engineId,
           styleId,
+          uiLock: true,
         })
         .finally(() => {
           mutations.SET_AUDIO_KEYS_WITH_INITIALIZING_SPEAKER({
@@ -698,8 +684,8 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
 
       const query = getters.IS_ENGINE_READY(voice.engineId)
         ? await actions
-            .FETCH_AUDIO_QUERY(fetchQueryParams)
-            .catch(() => undefined)
+          .FETCH_AUDIO_QUERY(fetchQueryParams)
+          .catch(() => undefined)
         : undefined;
 
       const newAudioItem: AudioItem = { text, voice };
@@ -1337,7 +1323,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
         accentPhrases.forEach(phrase => {
           let consecutivePunctuations = 0;
           phrase.moras.forEach(mora => {
-            if (mora.text === '.' || mora.text === ',') {
+            if (mora.text === "." || mora.text === ",") {
               consecutivePunctuations++;
               if (consecutivePunctuations <= maxConsecutivePunctuations) {
                 totalSpecialMoras++;
@@ -1362,7 +1348,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
         for (const phrase of accentPhrases) {
           let consecutivePunctuations = 0;
           phrase.moras.forEach(mora => {
-            if (mora.text === '.' || mora.text === ',') {
+            if (mora.text === "." || mora.text === ",") {
               consecutivePunctuations++;
               if (consecutivePunctuations <= maxConsecutivePunctuations) {
                 length += averageMoraLength * specialMoraWeight;
@@ -1445,7 +1431,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
       ) => {
         const engineId: EngineId | undefined = state.engineIds[0]; // TODO: 複数エンジン対応, 暫定的に音声結合機能は0番目のエンジンのみを使用する
         if (engineId == undefined)
-          throw new Error(`No such engine registered: index == 0`);
+          throw new Error("No such engine registered: index == 0");
 
         const instance = await actions.INSTANTIATE_ENGINE_CONNECTOR({
           engineId,
@@ -1481,9 +1467,11 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
             defaultAudioFileName,
           );
         } else {
-          filePath ??= await window.backend.showAudioSaveDialog({
+          filePath ??= await window.backend.showExportFileDialog({
             title: "音声を保存",
             defaultPath: defaultAudioFileName,
+            extensionName: "WAV ファイル",
+            extensions: ["wav"],
           });
         }
 
@@ -1628,9 +1616,11 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
             defaultFileName,
           );
         } else {
-          filePath ??= await window.backend.showAudioSaveDialog({
+          filePath ??= await window.backend.showExportFileDialog({
             title: "音声を全てつなげて保存",
             defaultPath: defaultFileName,
+            extensionName: "WAV ファイル",
+            extensions: ["wav"],
           });
         }
 
@@ -1771,9 +1761,11 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
             defaultFileName,
           );
         } else {
-          filePath ??= await window.backend.showTextSaveDialog({
+          filePath ??= await window.backend.showExportFileDialog({
             title: "文章を全てつなげてテキストファイルに保存",
             defaultPath: defaultFileName,
+            extensionName: "テキストファイル",
+            extensions: ["txt"],
           });
         }
 
@@ -2146,16 +2138,16 @@ export const audioCommandStore = transformCommandStore(
           changes: Record<
             AudioKey,
             | {
-                update: "AccentPhrases";
-                accentPhrases: AccentPhrase[];
-              }
+              update: "AccentPhrases";
+              accentPhrases: AccentPhrase[];
+            }
             | {
-                update: "AudioQuery";
-                query: EditorAudioQuery;
-              }
+              update: "AudioQuery";
+              query: EditorAudioQuery;
+            }
             | {
-                update: "OnlyVoice";
-              }
+              update: "OnlyVoice";
+            }
           >;
         },
       ) {
@@ -2210,16 +2202,16 @@ export const audioCommandStore = transformCommandStore(
         const changes: Record<
           AudioKey,
           | {
-              update: "AccentPhrases";
-              accentPhrases: AccentPhrase[];
-            }
+            update: "AccentPhrases";
+            accentPhrases: AccentPhrase[];
+          }
           | {
-              update: "AudioQuery";
-              query: EditorAudioQuery;
-            }
+            update: "AudioQuery";
+            query: EditorAudioQuery;
+          }
           | {
-              update: "OnlyVoice";
-            }
+            update: "OnlyVoice";
+          }
         > = {};
 
         for (const audioKey of audioKeys) {
@@ -3013,24 +3005,36 @@ export const audioCommandStore = transformCommandStore(
           prevAudioKey: undefined,
         });
       },
+      /**
+       * セリフテキストファイルを読み込む。
+       * ファイル選択ダイアログを表示するか、ファイルパス指定するか、Fileインスタンスを渡すか選べる。
+       */
       action: createUILockAction(
-        async (
-          { state, mutations, actions, getters },
-          { filePath }: { filePath?: string },
-        ) => {
-          if (!filePath) {
+        async ({ state, mutations, actions, getters }, payload) => {
+          let filePath: undefined | string;
+          if (payload.type == "dialog") {
             filePath = await window.backend.showImportFileDialog({
               title: "セリフ読み込み",
             });
             if (!filePath) return;
+          } else if (payload.type == "path") {
+            filePath = payload.filePath;
           }
-          let body = new TextDecoder("utf-8").decode(
-            await window.backend.readFile({ filePath }).then(getValueOrThrow),
-          );
+
+          let buf: ArrayBuffer;
+          if (filePath != undefined) {
+            buf = await window.backend
+              .readFile({ filePath })
+              .then(getValueOrThrow);
+          } else {
+            if (payload.type != "file")
+              throw new UnreachableError("payload.type != 'file'");
+            buf = await payload.file.arrayBuffer();
+          }
+
+          let body = new TextDecoder("utf-8").decode(buf);
           if (body.includes("\ufffd")) {
-            body = new TextDecoder("shift-jis").decode(
-              await window.backend.readFile({ filePath }).then(getValueOrThrow),
-            );
+            body = new TextDecoder("shift-jis").decode(buf);
           }
           const audioItems: AudioItem[] = [];
           let baseAudioItem: AudioItem | undefined = undefined;
