@@ -12,7 +12,7 @@ masterブランチをmainに名称変更していますが内容は同じです�
 
 また、Engineは同梱していません。成果物のディレクトリから```./Linux-x64/run```となるように置いてください。
 
-The build method is basically the same as the upstream one, but we have confirmed that it is compatible with nodejs 22.12.0 lts.
+The build method is basically the same as the upstream one, but we have confirmed that it is compatible with nodejs 22.19.0 LTS.
 
 The master branch has been renamed to main, but the content is the same.
 
