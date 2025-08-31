@@ -6,7 +6,7 @@
 
 [GithubPages](https://ebi-chiri-oishi.github.io/AivisSpeech-Linux-GUI-UNOFFICIAL)
 # ビルド
-上流のビルド方法と基本的には同じですが、nodejsの22.12.0 ltsで対応を確認しております。
+上流のビルド方法と基本的には同じですが、nodejsの22.19.0 ltsで対応を確認しております。
 
 masterブランチをmainに名称変更していますが内容は同じです。
 
