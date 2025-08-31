@@ -1,5 +1,5 @@
 <template>
-  <QDialog v-model="engineManageDialogOpenedComputed" maximized transitionShow="jump-up" transitionHide="jump-down"
+  <QDialog v-model="dialogOpened" maximized transitionShow="jump-up" transitionHide="jump-down"
     class="setting-dialog transparent-backdrop">
     <QLayout container view="hHh Lpr fFf" class="bg-background">
       <QPageContainer>
@@ -55,10 +55,9 @@
                 話者{{ index + 1 }} ({{ speaker.name }})
               </QTab>
             </QTabs>
-            <QTabPanels v-model="activeSpeakerIndex"
-              animated class="bg-background">
+            <QTabPanels v-model="activeSpeakerIndex" class="bg-background">
               <QTabPanel v-for="(speaker, index) of activeAivmInfo.manifest.speakers" :key="speaker.uuid" :name="index">
-                <div class="model-detail-content">
+                <div class="model-detail-content" :class="{'model-detail-content--multi-speaker': activeAivmInfo.manifest.speakers.length >= 2}">
                   <div class="q-mt-sm row items-center">
                     <div class="col-auto" style="font-size: 20px; font-weight: bold;">
                       <span>{{ activeAivmInfo.manifest.name }}</span>
@@ -68,16 +67,26 @@
                       </span>
                     </div>
                     <div class="col-auto q-ml-auto" style="font-size: 13.5px; color: #D2D3D4;">
-                      <span>Version {{ activeAivmInfo.manifest.version }} / </span>
-                      <span>{{ formatBytes(activeAivmInfo.fileSize) }}</span>
-                      <span v-if="activeAivmInfo.isUpdateAvailable" class="q-ml-xs text-primary">
+                      <span>Version {{ activeAivmInfo.manifest.version }}</span>
+                      <!-- プライベートモデルでない場合は AivisHub へのリンクを表示 -->
+                      <a v-if="!activeAivmInfo.isPrivateModel"
+                         :href="`https://hub.aivis-project.com/aivm-models/${activeAivmInfo.manifest.uuid}`"
+                         target="_blank"
+                         class="q-ml-xs">(AivisHub)</a>
+                      <!-- プライベートモデルの場合は (Private) を表示 -->
+                      <span v-else class="q-ml-xs">(Private)</span>
+                      <span> / {{ formatBytes(activeAivmInfo.fileSize) }}</span>
+                      <!-- アップデートがある場合は更新メッセージを表示 -->
+                      <a v-if="activeAivmInfo.isUpdateAvailable" class="q-ml-xs text-primary"
+                        :href="`https://hub.aivis-project.com/aivm-models/${activeAivmInfo.manifest.uuid}`"
+                        target="_blank">
                         (Version {{ activeAivmInfo.latestVersion }} に更新できます)
-                      </span>
+                      </a>
                     </div>
                   </div>
                   <div class="row items-center" style="margin-top: 12px;">
                     <div class="col-auto q-mr-sm" style="font-size: 15px; font-weight: bold;">
-                      {{ activeAivmInfo.manifest.speakers.reduce((acc, speaker) => acc + speaker.styles.length, 0) }}スタイル
+                      {{ speaker.styles.length }}スタイル
                     </div>
                     <div class="col-auto" style="font-size: 13.5px; font-weight: bold; color: #D2D3D4;">
                       {{ speaker.styles.map(style => style.name).join(' / ') }}
@@ -92,11 +101,12 @@
                     {{ activeAivmInfo.manifest.creators!.length >= 2 ? 'Creators: ' : 'Creator: ' }}
                     {{ activeAivmInfo.manifest.creators!.length >= 1 ? activeAivmInfo.manifest.creators!.join(' / ') : '不明' }}
                   </div>
-                  <div class="q-mt-md" style="font-size: 13.5px; color: #D2D3D4; white-space: pre-wrap; word-wrap: break-word;">
-                    {{ activeAivmInfo.manifest.description === '' ?
-                      '（この音声合成モデルの説明は提供されていません）' :
-                      activeAivmInfo.manifest.description
-                    }}
+                  <div class="q-mt-md" style="font-size: 13.5px; color: #D2D3D4; white-space: pre-wrap; word-wrap: break-word; line-height: 1.7;">
+                    <span v-if="activeAivmInfo.manifest.description === ''">
+                      （この音声合成モデルの説明は提供されていません）
+                    </span>
+                    <!-- eslint-disable-next-line vue/no-v-html -->
+                    <span v-else v-html="linkify(activeAivmInfo.manifest.description)"></span>
                   </div>
                   <div class="q-mt-md" style="margin-bottom: 12px; font-size: 17px; font-weight: bold;">ボイスサンプル</div>
                   <div class="row" style="gap: 12px;">
@@ -207,31 +217,28 @@
   </QDialog>
 </template>
 <script setup lang="ts">
-
 import { computed, ref, watch, onUnmounted } from "vue";
+import linkifyHtml from "linkify-html";
+
+import {
+  hideAllLoadingScreen,
+  showLoadingScreen,
+} from "@/components/Dialog/Dialog";
 import { formatBytes } from "@/helpers/fileHelper";
+import { createLogger } from "@/helpers/log";
 import { AivmInfo, ResponseError } from "@/openapi";
 import { useStore } from "@/store";
 
+const dialogOpened = defineModel<boolean>("dialogOpened", { default: false });
+
+const log = createLogger("ModelManageDialog");
+
 const store = useStore();
-
-const props = defineProps<{
-  modelValue: boolean;
-}>();
-const emit = defineEmits<{
-  (e: "update:modelValue", val: boolean): void;
-}>();
-
-const engineManageDialogOpenedComputed = computed({
-  get: () => props.modelValue,
-  set: (val) => emit("update:modelValue", val),
-});
 
 // ダイアログが閉じている状態
 const toDialogClosedState = () => {
-  engineManageDialogOpenedComputed.value = false;
+  dialogOpened.value = false;
 };
-
 
 // API インスタンスを取得する関数
 // VOICEVOX のお作法ではこうやらないと API を呼べないっぽい…
@@ -249,11 +256,11 @@ const aivmCount = computed(() => Object.keys(aivmInfoDict.value).length);
 const getAivmInfos = async () => {
   // 初回のみ読み込み中のローディングを表示する
   if (Object.keys(aivmInfoDict.value).length === 0) {
-    void store.actions.SHOW_LOADING_SCREEN({
+    showLoadingScreen({
       message: "読み込み中...",
     });
   }
-  const res = await getApiInstance().then((instance) => instance.invoke("getInstalledAivmInfosAivmModelsGet")({}));
+  const res = await getApiInstance().then((instance) => instance.invoke("getInstalledAivmInfos")({}));
   aivmInfoDict.value = res;
   // 初回のみアクティブな AIVM 音声合成モデルの UUID を設定
   if (activeAivmUuid.value == null && Object.keys(aivmInfoDict.value).length > 0) {
@@ -264,13 +271,13 @@ const getAivmInfos = async () => {
     activeAivmUuid.value = Object.values(aivmInfoDict.value)[0].manifest.uuid;
   }
   if (Object.keys(aivmInfoDict.value).length > 0) {
-    void store.actions.HIDE_ALL_LOADING_SCREEN();
+    void hideAllLoadingScreen();
   }
 };
 
 // ダイヤログが開かれた時
-watch(engineManageDialogOpenedComputed, () => {
-  if (engineManageDialogOpenedComputed.value) {
+watch(dialogOpened, () => {
+  if (dialogOpened.value) {
     void getAivmInfos();
     installMethod.value = "file";
     selectedFile.value = null;
@@ -353,24 +360,36 @@ const cancelInstall = () => {
   installUrl.value = "";
 };
 
+// 音声合成モデルの追加・更新・削除が起きた起きた際に話者・スタイル一覧をリロードする
+const reloadCharacterAndStyle = async () => {
+  // 話者・スタイル一覧を再読み込み
+  await store.actions.LOAD_CHARACTER({ engineId: store.getters.DEFAULT_ENGINE_ID });
+  await store.actions.LOAD_DEFAULT_STYLE_IDS();
+  // プリセットを再作成
+  await store.actions.CREATE_ALL_DEFAULT_PRESET();
+  // 新しくインストールされた音声合成モデル内話者の UUID が userCharacterOrder にまだ登録されていない場合、
+  // CharacterButton 内メニューで新しい話者が一番上に表示されて煩わしいため、ここで新しい話者の UUID を userCharacterOrder の末尾に登録する
+  const newCharacters = await store.actions.GET_NEW_CHARACTERS();
+  if (newCharacters.length > 0) {
+    const newUserCharacterOrder = [...store.state.userCharacterOrder, ...newCharacters];
+    await store.actions.SET_USER_CHARACTER_ORDER(newUserCharacterOrder);
+  }
+};
+
 // 音声合成モデルをインストールする
 const installModel = async () => {
-  void store.actions.SHOW_LOADING_SCREEN({
+  showLoadingScreen({
     message: "インストールしています...",
   });
   try {
     const apiInstance = await getApiInstance();
     if (installMethod.value === "file" && selectedFile.value) {
-      await apiInstance.invoke("installAivmAivmModelsInstallPost")({ file: selectedFile.value });
+      await apiInstance.invoke("installModel")({ file: selectedFile.value });
     } else if (installMethod.value === "url") {
-      await apiInstance.invoke("installAivmAivmModelsInstallPost")({ url: installUrl.value });
+      await apiInstance.invoke("installModel")({ url: installUrl.value });
     }
-    // インストール成功時の処理
     // 話者・スタイル一覧を再読み込み
-    await store.actions.LOAD_CHARACTER({ engineId: store.getters.DEFAULT_ENGINE_ID });
-    await store.actions.LOAD_DEFAULT_STYLE_IDS();
-    // プリセットを再作成
-    await store.actions.CREATE_ALL_DEFAULT_PRESET();
+    await reloadCharacterAndStyle();
     void store.actions.SHOW_MESSAGE_DIALOG({
       type: "info",
       title: "インストールが完了しました",
@@ -378,7 +397,7 @@ const installModel = async () => {
     });
     cancelInstall();
   } catch (error) {
-    console.error(error);
+    log.error(error);
     if (error instanceof ResponseError) {
       void store.actions.SHOW_ALERT_DIALOG({
         title: "インストールに失敗しました",
@@ -388,10 +407,8 @@ const installModel = async () => {
     } else {
       // assert characterInfo !== undefined エラーを無視
       if (error instanceof Error && error.message === "assert characterInfo !== undefined") {
-        // インストール成功時の処理を実行
-        await store.actions.LOAD_CHARACTER({ engineId: store.getters.DEFAULT_ENGINE_ID });
-        await store.actions.LOAD_DEFAULT_STYLE_IDS();
-        await store.actions.CREATE_ALL_DEFAULT_PRESET();
+        // 話者・スタイル一覧を再読み込み
+        await reloadCharacterAndStyle();
       } else {
         void store.actions.SHOW_ALERT_DIALOG({
           title: "インストールに失敗しました",
@@ -401,8 +418,8 @@ const installModel = async () => {
       }
     }
   } finally {
-    await store.actions.HIDE_ALL_LOADING_SCREEN();
-    void getAivmInfos();  // 再取得
+    await getAivmInfos();  // 再取得
+    hideAllLoadingScreen();
   }
 };
 
@@ -419,20 +436,16 @@ const unInstallAivmModel = async () => {
     isWarningColorButton: true,
   });
   if (result === "OK") {
-    void store.actions.SHOW_LOADING_SCREEN({
+    showLoadingScreen({
       message: "アンインストールしています...",
     });
     try {
       await getApiInstance().then((instance) =>
-        instance.invoke("uninstallAivmAivmModelsAivmUuidUninstallDelete")({ aivmUuid: activeAivmUuid.value! }));
-      // アンインストール成功時の処理
+        instance.invoke("uninstallModel")({ aivmUuid: activeAivmUuid.value! }));
       // 話者・スタイル一覧を再読み込み
-      await store.actions.LOAD_CHARACTER({ engineId: store.getters.DEFAULT_ENGINE_ID });
-      await store.actions.LOAD_DEFAULT_STYLE_IDS();
-      // プリセットを再作成
-      await store.actions.CREATE_ALL_DEFAULT_PRESET();
+      await reloadCharacterAndStyle();
     } catch (error) {
-      console.error(error);
+      log.error(error);
       if (error instanceof ResponseError) {
         void store.actions.SHOW_ALERT_DIALOG({
           title: "アンインストールに失敗しました",
@@ -442,10 +455,8 @@ const unInstallAivmModel = async () => {
       } else {
         // assert characterInfo !== undefined エラーを無視
         if (error instanceof Error && error.message === "assert characterInfo !== undefined") {
-          // アンインストール成功時の処理を実行
-          await store.actions.LOAD_CHARACTER({ engineId: store.getters.DEFAULT_ENGINE_ID });
-          await store.actions.LOAD_DEFAULT_STYLE_IDS();
-          await store.actions.CREATE_ALL_DEFAULT_PRESET();
+          // 話者・スタイル一覧を再読み込み
+          await reloadCharacterAndStyle();
         } else {
           void store.actions.SHOW_ALERT_DIALOG({
             title: "アンインストールに失敗しました",
@@ -455,8 +466,8 @@ const unInstallAivmModel = async () => {
         }
       }
     } finally {
-      await store.actions.HIDE_ALL_LOADING_SCREEN();
-      void getAivmInfos();  // 再取得
+      await getAivmInfos();  // 再取得
+      hideAllLoadingScreen();
     }
   }
 };
@@ -467,19 +478,19 @@ const toggleModelLoad = async () => {
     throw new Error("aivm model is not selected");
   }
 
-  void store.actions.SHOW_LOADING_SCREEN({
+  showLoadingScreen({
     message: activeAivmInfo.value?.isLoaded ? "モデルをアンロードしています..." : "モデルをロードしています...",
   });
 
   try {
     const apiInstance = await getApiInstance();
     if (activeAivmInfo.value?.isLoaded) {
-      await apiInstance.invoke("unloadAivmAivmModelsAivmUuidUnloadPost")({ aivmUuid: activeAivmUuid.value });
+      await apiInstance.invoke("unloadModel")({ aivmUuid: activeAivmUuid.value });
     } else {
-      await apiInstance.invoke("loadAivmAivmModelsAivmUuidLoadPost")({ aivmUuid: activeAivmUuid.value });
+      await apiInstance.invoke("loadModel")({ aivmUuid: activeAivmUuid.value });
     }
   } catch (error) {
-    console.error(error);
+    log.error(error);
     if (error instanceof ResponseError) {
       void store.actions.SHOW_ALERT_DIALOG({
         title: activeAivmInfo.value?.isLoaded ? "アンロードに失敗しました" : "ロードに失敗しました",
@@ -494,8 +505,8 @@ const toggleModelLoad = async () => {
       });
     }
   } finally {
-    await store.actions.HIDE_ALL_LOADING_SCREEN();
-    void getAivmInfos();  // 再取得
+    await getAivmInfos();  // 再取得
+    hideAllLoadingScreen();
   }
 };
 
@@ -513,26 +524,22 @@ const updateAivmModel = async () => {
   });
 
   if (result === "OK") {
-    void store.actions.SHOW_LOADING_SCREEN({
+    showLoadingScreen({
       message: "アップデートしています...",
     });
 
     try {
       const apiInstance = await getApiInstance();
-      await apiInstance.invoke("updateAivmAivmModelsAivmUuidUpdatePost")({ aivmUuid: activeAivmUuid.value });
-      // アップデート成功時の処理
+      await apiInstance.invoke("updateModel")({ aivmUuid: activeAivmUuid.value });
       // 話者・スタイル一覧を再読み込み
-      await store.actions.LOAD_CHARACTER({ engineId: store.getters.DEFAULT_ENGINE_ID });
-      await store.actions.LOAD_DEFAULT_STYLE_IDS();
-      // プリセットを再作成
-      await store.actions.CREATE_ALL_DEFAULT_PRESET();
+      await reloadCharacterAndStyle();
       void store.actions.SHOW_MESSAGE_DIALOG({
         type: "info",
         title: "アップデートが完了しました",
         message: "音声合成モデルが正常にアップデートされました。",
       });
     } catch (error) {
-      console.error(error);
+      log.error(error);
       if (error instanceof ResponseError) {
         void store.actions.SHOW_ALERT_DIALOG({
           title: "アップデートに失敗しました",
@@ -542,10 +549,8 @@ const updateAivmModel = async () => {
       } else {
         // assert characterInfo !== undefined エラーを無視
         if (error instanceof Error && error.message === "assert characterInfo !== undefined") {
-          // アップデート成功時の処理を実行
-          await store.actions.LOAD_CHARACTER({ engineId: store.getters.DEFAULT_ENGINE_ID });
-          await store.actions.LOAD_DEFAULT_STYLE_IDS();
-          await store.actions.CREATE_ALL_DEFAULT_PRESET();
+          // 話者・スタイル一覧を再読み込み
+          await reloadCharacterAndStyle();
         } else {
           void store.actions.SHOW_ALERT_DIALOG({
             title: "アップデートに失敗しました",
@@ -555,8 +560,8 @@ const updateAivmModel = async () => {
         }
       }
     } finally {
-      await store.actions.HIDE_ALL_LOADING_SCREEN();
-      void getAivmInfos();  // 再取得
+      await getAivmInfos();  // 再取得
+      hideAllLoadingScreen();
     }
   }
 };
@@ -569,6 +574,17 @@ onUnmounted(() => {
     audio.removeEventListener("ended", () => {});
   });
 });
+
+// URL をリンク化する関数
+const linkify = (text: string | undefined): string => {
+  if (!text) return "";
+  const result = linkifyHtml(text, {
+    defaultProtocol: "https",
+    target: "_blank",
+  });
+
+  return result;
+};
 
 </script>
 <style lang="scss" scoped>
@@ -602,6 +618,7 @@ onUnmounted(() => {
 }
 
 .model-detail {
+  user-select: text;
 
   .q-tab-panel {
     padding: 0 !important;
@@ -614,6 +631,13 @@ onUnmounted(() => {
     );
     padding: 16px;
     overflow-y: auto;
+
+    &--multi-speaker {
+      height: calc(
+        100vh - #{vars.$menubar-height + vars.$toolbar-height +
+          vars.$window-border-width} - 66px - 36px
+      );
+    }
   }
 
   .fixed-bottom-buttons {
@@ -710,6 +734,12 @@ onUnmounted(() => {
   justify-content: center;
   align-items: center;
   cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+
+  &:hover {
+    background: rgb(130, 201, 255);
+    transform: scale(1.05);
+  }
 }
 
 .sample-transcript {
@@ -724,6 +754,15 @@ onUnmounted(() => {
 .power-icon {
   margin-top: -2px;
   vertical-align: middle;
+}
+
+:deep(a) {
+  color: #41A2EC;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
 }
 
 </style>

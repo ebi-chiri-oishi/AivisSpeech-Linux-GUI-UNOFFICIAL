@@ -105,6 +105,14 @@ img {
   }
 }
 
+.q-tooltip {
+  // 背景色を変更
+  background-color: rgba(colors.$surface-rgb, 1) !important;
+  box-shadow: 0 0 6px 0 rgba(0, 0, 0, 0.2) !important;
+  // ツールチップが変な箇所で折り返さないようにする
+  max-width: none !important;
+}
+
 // ダイアログ
 .q-dialog,
 #q-loading {
@@ -380,7 +388,7 @@ img {
   font-family: "Material Symbols Outlined";
   font-weight: normal;
   font-style: normal;
-  font-size: 24px;  /* Preferred icon size */
+  font-size: 24px; /* Preferred icon size */
   display: inline-block;
   line-height: 1;
   text-transform: none;

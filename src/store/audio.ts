@@ -1,3 +1,4 @@
+import { toBase64 } from "fast-base64";
 import { createUILockAction, withProgress } from "./ui";
 import {
   AudioItem,
@@ -29,6 +30,8 @@ import { determineNextPresetKey } from "./preset";
 import {
   fetchAudioFromAudioItem,
   generateLabFromAudioQuery,
+  generateUniqueIdAndQuery,
+  clearAudioBlobCache,
   handlePossiblyNotMorphableError,
   isMorphable,
 } from "./audioGenerate";
@@ -326,7 +329,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
           let speakerStylePromise: Promise<StyleInfo[]> | undefined = undefined;
           if (speaker != undefined) {
             speakerInfoPromise = instance
-              .invoke("speakerInfoSpeakerInfoGet")({
+              .invoke("speakerInfo")({
                 speakerUuid: speaker.speakerUuid,
                 ...(useResourceUrl && { resourceFormat: "url" }),
               })
@@ -343,7 +346,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
           let singerStylePromise: Promise<StyleInfo[]> | undefined = undefined;
           if (singer != undefined) {
             singerInfoPromise = instance
-              .invoke("singerInfoSingerInfoGet")({
+              .invoke("singerInfo")({
                 speakerUuid: singer.speakerUuid,
                 ...(useResourceUrl && { resourceFormat: "url" }),
               })
@@ -387,9 +390,9 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
         };
 
         const [speakers, singers] = await Promise.all([
-          instance.invoke("speakersSpeakersGet")({}),
+          instance.invoke("speakers")({}),
           state.engineManifests[engineId].supportedFeatures.sing
-            ? await instance.invoke("singersSingersGet")({})
+            ? await instance.invoke("singers")({})
             : [],
         ]).catch((error) => {
           window.backend.logError(error, "Failed to get Speakers.");
@@ -443,7 +446,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
       const rawMorphableTargets = (
         await (
           await actions.INSTANTIATE_ENGINE_CONNECTOR({ engineId })
-        ).invoke("morphableTargetsMorphableTargetsPost")({
+        ).invoke("morphableTargets")({
           requestBody: [baseStyleId],
         })
       )[0];
@@ -1002,7 +1005,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
         })
         .then(async (instance) =>
           convertAudioQueryFromEngineToEditor(
-            await instance.invoke("audioQueryAudioQueryPost")({
+            await instance.invoke("audioQuery")({
               text,
               speaker: styleId,
             }),
@@ -1058,7 +1061,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
           engineId,
         })
         .then((instance) =>
-          instance.invoke("accentPhrasesAccentPhrasesPost")({
+          instance.invoke("accentPhrases")({
             text,
             speaker: styleId,
             isKana,
@@ -1181,7 +1184,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
           engineId,
         })
         .then((instance) =>
-          instance.invoke("moraDataMoraDataPost")({
+          instance.invoke("moraData")({
             accentPhrase: accentPhrases,
             speaker: styleId,
           }),
@@ -1228,21 +1231,54 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
 
   DEFAULT_PROJECT_FILE_BASE_NAME: {
     getter: (state) => {
+      // NOTE: 起動時にソングエディタが開かれた場合、トークの初期化が行われずAudioCellが作成されない
+      // TODO: ソングエディタが開かれてい場合はこの関数を呼ばないようにし、warningを出す
+      if (state.audioKeys.length === 0) {
+        return DEFAULT_PROJECT_NAME;
+      }
+
       const headItemText = state.audioItems[state.audioKeys[0]].text;
 
       const tailItemText =
         state.audioItems[state.audioKeys[state.audioKeys.length - 1]].text;
 
-      const headTailItemText =
-        state.audioKeys.length === 1
-          ? headItemText
-          : headItemText + "..." + tailItemText;
+      // ファイル名の長さを50文字以内に収める
+      const maxLength = 50;
+      const ellipsis = "…";
+      const ellipsisLength = ellipsis.length;
 
-      const defaultFileBaseName = sanitizeFileName(headTailItemText);
+      let head = sanitizeFileName(headItemText);
+      let tail = sanitizeFileName(tailItemText);
 
-      return defaultFileBaseName === ""
-        ? DEFAULT_PROJECT_NAME
-        : defaultFileBaseName;
+      // 1行しか存在しない場合
+      if (state.audioKeys.length === 1) {
+        // 50文字を超える場合は末尾を省略
+        if (head.length > maxLength) {
+          head = head.substring(0, maxLength - ellipsisLength) + ellipsis;
+        }
+        const headTailItemText = head;
+
+        if (headTailItemText === "") {
+          return DEFAULT_PROJECT_NAME;
+        }
+        return headTailItemText;
+      }
+
+      // 複数行の場合は従来通りの処理
+      if (head.length + tail.length + ellipsisLength > maxLength) {
+        // head, tail をバランスよく切り詰める
+        const headMax = Math.floor((maxLength - ellipsisLength) / 2);
+        const tailMax = maxLength - ellipsisLength - headMax;
+        head = head.substring(0, headMax);
+        tail = tail.substring(tail.length - tailMax);
+      }
+
+      const headTailItemText = head + ellipsis + tail;
+
+      if (headTailItemText === "") {
+        return DEFAULT_PROJECT_NAME;
+      }
+      return headTailItemText;
     },
   },
 
@@ -1282,7 +1318,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
   },
 
   GET_AUDIO_PLAY_OFFSETS: {
-    action({ state, getters }, { audioKey }: { audioKey: AudioKey }) {
+    action({ state }, { audioKey }: { audioKey: AudioKey }) {
       const query = state.audioItems[audioKey].query;
       const accentPhrases = query?.accentPhrases;
       if (query == undefined || accentPhrases == undefined)
@@ -1293,102 +1329,21 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
       offsets.push(length);
       // pre phoneme lengthは最初のアクセント句の一部として扱う
       length += query.prePhonemeLength;
-
-      // AivisSpeech Engine で生成した音声のみの特別対応
-      if (state.audioItems[audioKey].voice.engineId === getters.DEFAULT_ENGINE_ID) {
-
-        // AivisSpeech Engine の実装上正確な音素単位の長さは取得できないためある程度のズレは避けられないが、
-        // 視覚的には少し早めに次の音素の再生部分にハイライトされて行った方がストレスがない
-        const audioDurationMagicDiff = 0.06 / query.speedScale;  // 尺を少しだけ削って若干速く表示されるようにする
-
-        // 現在再生中の音声の長さを取得
-        let audioDuration = getters.ACTIVE_AUDIO_ELEM_DURATION;
-        if (audioDuration == undefined) {
-          throw new Error("audioDuration == undefined");
-        }
-        if (Number.isNaN(audioDuration)) {
-          audioDuration = 0;
-        }
-        audioDuration = Math.max(0, audioDuration - query.prePhonemeLength - query.postPhonemeLength - audioDurationMagicDiff);
-
-        // 特殊なモーラ (pauseMora や句読点) の重み付け
-        const specialMoraWeight = 1.5;  // 1.5 倍の重み付け
-        // 連続する句読点の最大数
-        const maxConsecutivePunctuations = 2;
-
-        // 通常のモーラと特殊なモーラの総数を計算
-        let totalNormalMoras = 0;
-        let totalSpecialMoras = 0;
-
-        accentPhrases.forEach(phrase => {
-          let consecutivePunctuations = 0;
-          phrase.moras.forEach(mora => {
-            if (mora.text === "." || mora.text === ",") {
-              consecutivePunctuations++;
-              if (consecutivePunctuations <= maxConsecutivePunctuations) {
-                totalSpecialMoras++;
-              }
-            } else {
-              consecutivePunctuations = 0;
-              totalNormalMoras++;
-            }
-          });
-          if (phrase.pauseMora) {
-            totalSpecialMoras++;
-          }
+      let i = 0;
+      for (const phrase of accentPhrases) {
+        phrase.moras.forEach((m) => {
+          length += m.consonantLength != undefined ? m.consonantLength : 0;
+          length += m.vowelLength;
         });
-
-        // 重み付けを考慮した総モーラ数を計算
-        const weightedTotalMoras = totalNormalMoras + (totalSpecialMoras * specialMoraWeight);
-
-        // 1モーラあたりの平均長さを計算（重み付けを考慮）
-        const averageMoraLength = audioDuration / weightedTotalMoras;
-
-        let i = 0;
-        for (const phrase of accentPhrases) {
-          let consecutivePunctuations = 0;
-          phrase.moras.forEach(mora => {
-            if (mora.text === "." || mora.text === ",") {
-              consecutivePunctuations++;
-              if (consecutivePunctuations <= maxConsecutivePunctuations) {
-                length += averageMoraLength * specialMoraWeight;
-              }
-            } else {
-              consecutivePunctuations = 0;
-              length += averageMoraLength;
-            }
-          });
-
-          // pauseMora も特殊なモーラとして扱う
-          if (phrase.pauseMora) {
-            length += averageMoraLength * specialMoraWeight;
-          }
-
-          // post phoneme lengthは最後のアクセント句の一部として扱う
-          if (i === accentPhrases.length - 1) {
-            length += query.postPhonemeLength;
-            length += audioDurationMagicDiff;
-          }
-          offsets.push(length);
-          i++;
+        length += phrase.pauseMora
+          ? phrase.pauseMora.vowelLength * query.pauseLengthScale
+          : 0;
+        // post phoneme lengthは最後のアクセント句の一部として扱う
+        if (i === accentPhrases.length - 1) {
+          length += query.postPhonemeLength;
         }
-      } else {
-        let i = 0;
-        for (const phrase of accentPhrases) {
-          phrase.moras.forEach((m) => {
-            length += m.consonantLength != undefined ? m.consonantLength : 0;
-            length += m.vowelLength;
-          });
-          length += phrase.pauseMora
-            ? phrase.pauseMora.vowelLength * query.pauseLengthScale
-            : 0;
-          // post phoneme lengthは最後のアクセント句の一部として扱う
-          if (i === accentPhrases.length - 1) {
-            length += query.postPhonemeLength;
-          }
-          offsets.push(length / query.speedScale);
-          i++;
-        }
+        offsets.push(length / query.speedScale);
+        i++;
       }
       return offsets;
     },
@@ -1399,11 +1354,22 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
       { actions, state },
       { audioKey, ...options }: { audioKey: AudioKey; cacheOnly?: boolean },
     ) {
+      // タイミングの関係で 0.2 秒待つ
+      // 再生開始ボタンを押す → テキストボックスのフォーカスが外れ IME 変換が確定 →
+      // テキストが AudioItem に反映されるまでには若干のラグがあり、
+      // タイミング次第ではテキストの反映より先にこの処理が実行され、変更前のテキストで音声合成されてしまうことがある
+      // 0.2 秒はヒューリスティックな実測値
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      // この時点でまだ AudioItem.text が空ならさらに 0.5 秒待つ
+      if (state.audioItems[audioKey].text === "") {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
       const audioItem: AudioItem = cloneWithUnwrapProxy(
         state.audioItems[audioKey],
       );
       return actions.FETCH_AUDIO_FROM_AUDIO_ITEM({
         audioItem,
+        audioKey,
         ...options,
       });
     },
@@ -1412,13 +1378,21 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
   FETCH_AUDIO_FROM_AUDIO_ITEM: {
     action: createUILockAction(
       async (
-        { actions, state },
-        options: { audioItem: AudioItem; cacheOnly?: boolean },
+        { mutations, actions, state },
+        options: { audioItem: AudioItem; audioKey?: AudioKey; cacheOnly?: boolean },
       ) => {
         const instance = await actions.INSTANTIATE_ENGINE_CONNECTOR({
           engineId: options.audioItem.voice.engineId,
         });
-        return fetchAudioFromAudioItem(state, instance, options);
+        const result = await fetchAudioFromAudioItem(state, instance, options);
+        if (options.audioKey != undefined) {
+          // fetchAudioFromAudioItem() でヒューリスティックに発音長を算出した AudioQuery を state に反映する
+          mutations.SET_AUDIO_QUERY({
+            audioKey: options.audioKey,
+            audioQuery: result.audioQuery,
+          });
+        }
+        return result;
       },
     ),
   },
@@ -1437,7 +1411,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
           engineId,
         });
         try {
-          return instance.invoke("connectWavesConnectWavesPost")({
+          return instance.invoke("connectWaves")({
             requestBody: encodedBlobs,
           });
         } catch (e) {
@@ -1467,11 +1441,11 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
             defaultAudioFileName,
           );
         } else {
-          filePath ??= await window.backend.showExportFileDialog({
+          filePath ??= await window.backend.showSaveFileDialog({
             title: "音声を保存",
-            defaultPath: defaultAudioFileName,
-            extensionName: "WAV ファイル",
+            name: "WAV ファイル",
             extensions: ["wav"],
+            defaultPath: defaultAudioFileName,
           });
         }
 
@@ -1616,11 +1590,11 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
             defaultFileName,
           );
         } else {
-          filePath ??= await window.backend.showExportFileDialog({
+          filePath ??= await window.backend.showSaveFileDialog({
             title: "音声を全てつなげて保存",
-            defaultPath: defaultFileName,
-            extensionName: "WAV ファイル",
+            name: "WAV ファイル",
             extensions: ["wav"],
+            defaultPath: defaultFileName,
           });
         }
 
@@ -1636,21 +1610,9 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
         const labs: string[] = [];
         const texts: string[] = [];
 
-        const base64Encoder = (blob: Blob): Promise<string | undefined> => {
-          return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              // string/undefined以外が来ることはないと思うが、型定義的にArrayBufferも来るので、toStringする
-              const result = reader.result?.toString();
-              if (result) {
-                // resultの中身は、"data:audio/wav;base64,<content>"という形なので、カンマ以降を抜き出す
-                resolve(result.slice(result.indexOf(",") + 1));
-              } else {
-                reject();
-              }
-            };
-            reader.readAsDataURL(blob);
-          });
+        const base64Encoder = async (blob: Blob): Promise<string> => {
+          const arrayBuffer = await blob.arrayBuffer();
+          return toBase64(new Uint8Array(arrayBuffer));
         };
 
         const totalCount = state.audioKeys.length;
@@ -1761,11 +1723,11 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
             defaultFileName,
           );
         } else {
-          filePath ??= await window.backend.showExportFileDialog({
+          filePath ??= await window.backend.showSaveFileDialog({
             title: "文章を全てつなげてテキストファイルに保存",
-            defaultPath: defaultFileName,
-            extensionName: "テキストファイル",
+            name: "テキストファイル",
             extensions: ["txt"],
+            defaultPath: defaultFileName,
           });
         }
 
@@ -1841,7 +1803,7 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
       async ({ mutations, actions }, { audioKey }: { audioKey: AudioKey }) => {
         await actions.STOP_AUDIO();
 
-        // 音声用意
+        // 音声の用意
         let fetchAudioResult: FetchAudioResult;
         mutations.SET_AUDIO_NOW_GENERATING({
           audioKey,
@@ -1868,6 +1830,28 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
     ),
   },
 
+  PLAY_AUDIO_WITH_CLEAR_CACHE: {
+    action: createUILockAction(
+      async ({ actions, state }, { audioKey }: { audioKey: AudioKey }) => {
+
+        // audioKey に対応する AudioItem を取得
+        const audioItem = state.audioItems[audioKey];
+        if (!audioItem) {
+          throw new Error(`AudioItem not found for key: ${audioKey}`);
+        }
+
+        // AudioItem に対応するキャッシュ ID を取得し、キャッシュをクリア
+        // キャッシュが存在しない場合は何も行われない
+        const [cacheId] = await generateUniqueIdAndQuery(state, audioItem);
+        clearAudioBlobCache(cacheId);
+
+        // 音声の用意 (キャッシュがクリアされているので必ず再生成される)
+        // 以降の処理は PLAY_AUDIO と同じ
+        return actions.PLAY_AUDIO({ audioKey });
+      },
+    ),
+  },
+
   PLAY_AUDIO_BLOB: {
     action: createUILockAction(
       async (
@@ -1878,7 +1862,6 @@ export const audioStore = createPartialStore<AudioStoreTypes>({
         let offset: number | undefined;
         // 途中再生用の処理
         if (audioKey) {
-          await getters.WAIT_FOR_AUDIO_LOAD;  // 音声が読み込まれるまで待つのが重要
           const accentPhraseOffsets = await actions.GET_AUDIO_PLAY_OFFSETS({
             audioKey,
           });
@@ -2578,7 +2561,7 @@ export const audioCommandStore = transformCommandStore(
             audioKey,
             accentPhrases: resultAccentPhrases,
           });
-        } catch (error) {
+        } catch {
           mutations.COMMAND_CHANGE_SINGLE_ACCENT_PHRASE({
             audioKey,
             accentPhrases: newAccentPhrases,
@@ -2757,6 +2740,51 @@ export const audioCommandStore = transformCommandStore(
       ) {
         mutations.COMMAND_SET_AUDIO_MORA_DATA_ACCENT_PHRASE(payload);
       },
+    },
+
+    COMMAND_RESET_READING_AND_ACCENT: {
+      async action({ state, actions, mutations }, { audioKey }) {
+        const audioItem = state.audioItems[audioKey];
+        if (!audioItem) return;
+
+        const { engineId, styleId } = audioItem.voice;
+        const text = audioItem.text;
+
+        try {
+          // 現在のテキストで新しいアクセント句を取得
+          const newAccentPhrases = await actions.FETCH_ACCENT_PHRASES({
+            text,
+            engineId,
+            styleId,
+          });
+
+          // 新しいアクセント句でAudioQueryを取得
+          const newAudioQuery = await actions.FETCH_AUDIO_QUERY({
+            text,
+            engineId,
+            styleId,
+          });
+
+          // 更新を反映
+          mutations.COMMAND_CHANGE_AUDIO_TEXT({
+            audioKey,
+            text,
+            update: "AudioQuery",
+            query: newAudioQuery,
+          });
+
+          mutations.COMMAND_CHANGE_AUDIO_TEXT({
+            audioKey,
+            text,
+            update: "AccentPhrases",
+            accentPhrases: newAccentPhrases,
+          });
+
+        } catch (e) {
+          console.error("Failed to reset reading and accent:", e);
+          window.backend.logError("Failed to reset reading and accent:", e);
+        }
+      }
     },
 
     COMMAND_MULTI_SET_AUDIO_SPEED_SCALE: {
@@ -3013,15 +3041,18 @@ export const audioCommandStore = transformCommandStore(
         async ({ state, mutations, actions, getters }, payload) => {
           let filePath: undefined | string;
           if (payload.type == "dialog") {
-            filePath = await window.backend.showImportFileDialog({
+            filePath = await window.backend.showOpenFileDialog({
               title: "セリフ読み込み",
+              name: "Text",
+              mimeType: "plain/text",
+              extensions: ["txt"],
             });
             if (!filePath) return;
           } else if (payload.type == "path") {
             filePath = payload.filePath;
           }
 
-          let buf: ArrayBuffer;
+          let buf: Uint8Array;
           if (filePath != undefined) {
             buf = await window.backend
               .readFile({ filePath })
@@ -3029,7 +3060,7 @@ export const audioCommandStore = transformCommandStore(
           } else {
             if (payload.type != "file")
               throw new UnreachableError("payload.type != 'file'");
-            buf = await payload.file.arrayBuffer();
+            buf = new Uint8Array(await payload.file.arrayBuffer());
           }
 
           let body = new TextDecoder("utf-8").decode(buf);

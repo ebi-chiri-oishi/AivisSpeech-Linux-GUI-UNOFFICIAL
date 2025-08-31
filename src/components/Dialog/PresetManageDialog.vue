@@ -1,11 +1,10 @@
 <template>
   <QDialog
-    :modelValue="props.openDialog"
+    v-model="dialogOpened"
     maximized
     transitionShow="jump-up"
     transitionHide="jump-down"
     class="setting-dialog transparent-backdrop"
-    @update:modelValue="updateOpenDialog"
   >
     <QLayout container view="hHh Lpr fFf" class="bg-background">
       <QPageContainer>
@@ -18,7 +17,7 @@
               color="display"
               @click="closeDialog"
             />
-            <QToolbarTitle class="text-display">プリセットの管理</QToolbarTitle>
+            <QToolbarTitle class="text-display">プリセットを編集</QToolbarTitle>
           </QToolbar>
         </QHeader>
 
@@ -27,8 +26,9 @@
           <div class="col-4" style="position: relative; min-width: 260px; flex-shrink: 0; border-right: solid 1px var(--color-surface);">
             <QList v-if="presetList.length > 0" class="preset-list">
               <Draggable
-                :modelValue="previewPresetList"
+                :modelValue="presetList"
                 itemKey="key"
+                handle=".drag-handle"
                 @update:modelValue="reorderPreset"
               >
                 <template #item="{ element: item }">
@@ -37,10 +37,14 @@
                     clickable
                     :active="selectedPresetKey === item.key"
                     activeClass="active-preset"
+                    class="preset-item"
                     @click="selectPreset(item.key)"
                   >
                     <QItemSection>
                       <QItemLabel class="text-display">{{ item.name }}</QItemLabel>
+                    </QItemSection>
+                    <QItemSection avatar class="drag-handle">
+                      <QIcon name="sym_r_drag_indicator" size="xs" color="grey" />
                     </QItemSection>
                   </QItem>
                 </template>
@@ -55,7 +59,7 @@
                 <div class="text-h6">プリセットが登録されていません</div>
                 <div class="text-caption q-mt-sm">
                   エディター画面右のパラメータを変更した状態で<br>
-                  プリセットを新規登録すると追加できます
+                  プリセットを新規登録すると追加できます。
                 </div>
               </div>
             </div>
@@ -181,10 +185,27 @@
                   icon="sym_r_save"
                   label="保存"
                   textColor="primary"
-                  class="text-no-wrap text-bold"
+                  class="text-no-wrap text-bold q-mr-sm"
                   :disabled="!isPresetChanged"
                   @click="saveChanges"
-                />
+                >
+                  <QTooltip :delay="150" :offset="[0, 8]">
+                    変更の保存のみを行う
+                  </QTooltip>
+                </QBtn>
+                <QBtn
+                  outline
+                  icon="sym_r_save"
+                  label="保存して適用"
+                  textColor="primary"
+                  class="text-no-wrap text-bold"
+                  :disabled="!isPresetChanged"
+                  @click="saveAndApplyChanges"
+                >
+                  <QTooltip :delay="150" :offset="[0, 8]">
+                    変更を保存し、このプリセットが設定されたテキスト欄すべてに適用する
+                  </QTooltip>
+                </QBtn>
               </div>
             </template>
           </div>
@@ -210,14 +231,7 @@ import type {
 } from "@/type/preload";
 import { SLIDER_PARAMETERS } from "@/store/utility";
 
-const props = defineProps<{
-  openDialog: boolean;
-}>();
-const emit = defineEmits<{
-  (e: "update:openDialog", val: boolean): void;
-}>();
-
-const updateOpenDialog = (isOpen: boolean) => emit("update:openDialog", isOpen);
+const dialogOpened = defineModel<boolean>("dialogOpened", { default: false });
 
 const store = useStore();
 const { isDefaultPresetKey } = useDefaultPreset();
@@ -233,22 +247,6 @@ const presetList = computed(() =>
       key,
       ...presetItems.value[key],
     }))
-    .sort((a, b) => a.name.localeCompare(b.name, "ja")),
-);
-
-const isPreview = ref(false);
-const previewPresetKeys = ref(store.state.presetKeys);
-
-const previewPresetList = computed(() =>
-  isPreview.value
-    ? previewPresetKeys.value
-      .filter((key) => presetItems.value[key] != undefined)
-      .filter((key) => !isDefaultPresetKey(key))
-      .map((key) => ({
-        key,
-        ...presetItems.value[key],
-      }))
-    : presetList.value,
 );
 
 type ParameterType = Exclude<PresetSliderKey, "morphingRate">;
@@ -275,11 +273,15 @@ const isPresetChanged = computed(() => {
 });
 
 watch(
-  () => props.openDialog,
+  () => dialogOpened.value,
   (newValue) => {
     if (newValue && presetList.value.length > 0) {
       // ダイアログを開いた時に最初のプリセットを選択
       selectPreset(presetList.value[0].key);
+    } else if (!newValue) {
+      // ダイアログが閉じられた時に状態をリセット
+      selectedPresetKey.value = undefined;
+      editingPreset.value = undefined;
     }
   },
 );
@@ -324,10 +326,11 @@ const discardChangesWithConfirm = async (callback: () => void) => {
 const discardChanges = () => {
   if (!selectedPresetKey.value) return;
   void discardChangesWithConfirm(() => {
-    editingPreset.value = { ...presetItems.value[selectedPresetKey.value!] };
-    if (editingPreset.value.morphingInfo) {
-      editingPreset.value.morphingInfo = { ...editingPreset.value.morphingInfo };
-    }
+    if (!selectedPresetKey.value) return;
+
+    // プリセットのディープコピーを作成
+    const originalPreset = presetItems.value[selectedPresetKey.value];
+    editingPreset.value = JSON.parse(JSON.stringify(originalPreset));
   });
 };
 
@@ -340,29 +343,40 @@ const saveChanges = async () => {
   });
 };
 
+const saveAndApplyChanges = async () => {
+  if (!selectedPresetKey.value || !editingPreset.value) return;
+
+  // プリセットを更新
+  await store.actions.UPDATE_PRESET({
+    presetData: editingPreset.value,
+    presetKey: selectedPresetKey.value,
+  });
+
+  // 更新したプリセットを使用しているすべての音声アイテムに適用
+  await store.actions.COMMAND_FULLY_APPLY_AUDIO_PRESET({
+    presetKey: selectedPresetKey.value,
+  });
+};
+
 const closeDialog = () => {
   if (isPresetChanged.value) {
     void discardChangesWithConfirm(() => {
-      emit("update:openDialog", false);
+      dialogOpened.value = false;
     });
   } else {
-    emit("update:openDialog", false);
+    dialogOpened.value = false;
   }
 };
 
 const reorderPreset = (featurePresetList: (Preset & { key: PresetKey })[]) => {
   const newPresetKeys = featurePresetList.map((item) => item.key);
-  previewPresetKeys.value = newPresetKeys;
-  isPreview.value = true;
 
-  // デフォルトプリセットは表示するlistから除外しているので、末尾に追加しておかないと失われる
+  // ストアのアクションを呼び出して順序を保存
+  // デフォルトプリセットは表示するlistから除外しているので、元のキーリストから取得して末尾に追加する
   const defaultPresetKeys = presetKeys.value.filter(isDefaultPresetKey);
-
-  void store.actions
-    .SAVE_PRESET_ORDER({
-      presetKeys: [...newPresetKeys, ...defaultPresetKeys],
-    })
-    .finally(() => (isPreview.value = false));
+  void store.actions.SAVE_PRESET_ORDER({
+    presetKeys: [...newPresetKeys, ...defaultPresetKeys],
+  });
 };
 
 const deletePreset = async (key: PresetKey | undefined) => {
@@ -454,7 +468,7 @@ const shouldShowParameter = (sliderKey: PresetSliderKey) => {
 const getParameterLabel = (sliderKey: PresetSliderKey): string => {
   if (isAivisSpeechEngine.value) {
     // AivisSpeech Engine での特殊なラベル
-    if (sliderKey === "intonationScale") return "スタイルの強さ";
+    if (sliderKey === "intonationScale") return "感情表現の強さ";
   }
   return parameterLabels[sliderKey as ParameterType] ?? "";
 };
@@ -475,8 +489,31 @@ const getParameterLabel = (sliderKey: PresetSliderKey): string => {
 }
 
 .active-preset {
+  padding-right: 12px;
   background: hsl(206 66% 32% / 1);
   border-right: 4px solid colors.$primary;
+}
+
+.preset-item {
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: hsla(0, 0%, 50%, 0.1);
+  }
+}
+
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  cursor: grab;
+
+  &:active {
+    cursor: grabbing;
+  }
 }
 
 .preset-detail {

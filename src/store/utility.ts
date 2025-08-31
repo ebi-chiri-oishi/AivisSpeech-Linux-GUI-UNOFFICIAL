@@ -18,8 +18,7 @@ export const DEFAULT_PROJECT_NAME = "Untitled";
 export const formatCharacterStyleName = (
   characterName: string,
   styleName = DEFAULT_STYLE_NAME,
-  // eslint-disable-next-line no-irregular-whitespace
-) => `${characterName}​（${styleName}）`;
+) => `${characterName}（${styleName}）`;
 
 export function sanitizeFileName(fileName: string): string {
   // \x00 - \x1f: ASCII 制御文字
@@ -67,7 +66,7 @@ export const SLIDER_PARAMETERS: Record<PresetSliderKey, SliderParameter> = {
     scrollMinStep: () => 0.01,
   },
   /**
-   * スタイルの強さパラメータの定義
+   * 感情表現の強さパラメータの定義
    */
   intonationScale: {
     max: () => 2,
@@ -408,8 +407,9 @@ export function buildAudioFileNameFromRawData(
   }
 
   let text = sanitizeFileName(vars.text);
-  if (text.length > 10) {
-    text = text.substring(0, 9) + "…";
+  // 最大30文字を超える場合は末尾を省略
+  if (text.length > 30) {
+    text = text.substring(0, 29) + "…";
   }
 
   const commonVars = formatCommonFileNameFromRawData(vars);

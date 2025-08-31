@@ -9,6 +9,7 @@ import {
   StoreOptions,
   PayloadFunction,
   Store,
+  DotNotationActionContext,
 } from "./vuex";
 import { createCommandMutationTree, PayloadRecipeTree } from "./command";
 import {
@@ -59,7 +60,7 @@ import { IEngineConnectorFactory } from "@/infrastructures/EngineConnector";
 import {
   TextDialogResult,
   NotifyAndNotShowAgainButtonOption,
-  LoadingScreenOption,
+  NotifyOption,
   MessageDialogOptions,
   ConfirmDialogOptions,
   WarningDialogOptions,
@@ -431,7 +432,7 @@ export type AudioStoreTypes = {
   };
 
   FETCH_AUDIO_FROM_AUDIO_ITEM: {
-    action(payload: { audioItem: AudioItem }): Promise<FetchAudioResult>;
+    action(payload: { audioItem: AudioItem, audioKey?: AudioKey, cacheOnly?: boolean }): Promise<FetchAudioResult>;
   };
 
   CONNECT_AUDIO: {
@@ -468,6 +469,10 @@ export type AudioStoreTypes = {
     action(payload: { audioKey: AudioKey }): boolean;
   };
 
+  PLAY_AUDIO_WITH_CLEAR_CACHE: {
+    action(payload: { audioKey: AudioKey }): boolean;
+  };
+
   PLAY_AUDIO_BLOB: {
     action(payload: { audioBlob: Blob; audioKey?: AudioKey }): boolean;
   };
@@ -488,6 +493,7 @@ export type AudioStoreTypes = {
  * Audio Command Store Types
  */
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export type AudioCommandStoreState = {
   //
 };
@@ -624,6 +630,10 @@ export type AudioCommandStoreTypes = {
     }): void;
   };
 
+  COMMAND_RESET_READING_AND_ACCENT: {
+    action(payload: { audioKey: AudioKey }): void;
+  };
+
   COMMAND_MULTI_SET_AUDIO_SPEED_SCALE: {
     mutation: { audioKeys: AudioKey[]; speedScale: number };
     action(payload: { audioKeys: AudioKey[]; speedScale: number }): void;
@@ -733,16 +743,8 @@ export type AudioPlayerStoreState = {
 };
 
 export type AudioPlayerStoreTypes = {
-  ACTIVE_AUDIO_ELEM_CURRENT_TIME: {
-    getter: number | undefined;
-  };
-
-  ACTIVE_AUDIO_ELEM_DURATION: {
-    getter: number | undefined;
-  };
-
-  WAIT_FOR_AUDIO_LOAD: {
-    getter: Promise<boolean>;
+  ACTIVE_AUDIO_ELEM_CURRENT_TIME_GETTER: {
+    getter: () => number | undefined;
   };
 
   NOW_PLAYING: {
@@ -1148,10 +1150,6 @@ export type SingingStoreTypes = {
     action(payload: { snapType: number }): void;
   };
 
-  SEQUENCER_NUM_MEASURES: {
-    getter: number;
-  };
-
   SET_ZOOM_X: {
     mutation: { zoomX: number };
     action(payload: { zoomX: number }): void;
@@ -1214,13 +1212,39 @@ export type SingingStoreTypes = {
     action(): void;
   };
 
-  FETCH_SING_FRAME_VOLUME: {
-    action(palyoad: {
+  FETCH_SING_FRAME_AUDIO_QUERY: {
+    action(payload: {
+      notes: NoteForRequestToEngine[];
+      engineFrameRate: number;
+      engineId: EngineId;
+      styleId: StyleId;
+    }): Promise<EditorFrameAudioQuery>;
+  };
+
+  FETCH_SING_FRAME_F0: {
+    action(payload: {
       notes: NoteForRequestToEngine[];
       query: EditorFrameAudioQuery;
       engineId: EngineId;
       styleId: StyleId;
     }): Promise<number[]>;
+  };
+
+  FETCH_SING_FRAME_VOLUME: {
+    action(payload: {
+      notes: NoteForRequestToEngine[];
+      query: EditorFrameAudioQuery;
+      engineId: EngineId;
+      styleId: StyleId;
+    }): Promise<number[]>;
+  };
+
+  FRAME_SYNTHESIS: {
+    action(payload: {
+      query: EditorFrameAudioQuery;
+      engineId: EngineId;
+      styleId: StyleId;
+    }): Promise<Blob>;
   };
 
   TICK_TO_SECOND: {
@@ -1410,6 +1434,7 @@ export type SingingStoreTypes = {
   };
 };
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export type SingingCommandStoreState = {
   //
 };
@@ -1618,7 +1643,7 @@ export type EngineStoreState = {
 };
 
 export type EngineStoreTypes = {
-  GET_ENGINE_INFOS: {
+  PULL_AND_INIT_ENGINE_INFOS: {
     action(): void;
   };
 
@@ -1626,7 +1651,7 @@ export type EngineStoreTypes = {
     mutation: { engineId: EngineId; engineInfo: EngineInfo };
   };
 
-  GET_ONLY_ENGINE_INFOS: {
+  PULL_ENGINE_INFOS: {
     action: (payload: { engineIds: EngineId[] }) => Promise<void>;
   };
 
@@ -1638,7 +1663,7 @@ export type EngineStoreTypes = {
     getter: EngineId;
   };
 
-  GET_ALT_PORT_INFOS: {
+  PULL_ALT_PORT_INFOS: {
     action(): Promise<AltPortInfos>;
   };
 
@@ -1875,14 +1900,26 @@ export type ProjectStoreTypes = {
     ): boolean;
   };
 
-  SAVE_PROJECT_FILE: {
-    action(payload: { overwrite?: boolean }): boolean;
+  SAVE_PROJECT_FILE_OVERWRITE: {
+    action(): Promise<boolean>;
+  };
+
+  SAVE_PROJECT_FILE_AS: {
+    action(): Promise<boolean>;
+  };
+
+  SAVE_PROJECT_FILE_AS_COPY: {
+    action(): Promise<boolean>;
   };
 
   SAVE_OR_DISCARD_PROJECT_FILE: {
-    action(palyoad: {
+    action(payload: {
       additionalMessage?: string;
     }): "saved" | "discarded" | "canceled";
+  };
+
+  GET_INITIAL_PROJECT_FILE_PATH: {
+    action(): Promise<string | undefined>;
   };
 
   IS_EDITED: {
@@ -2031,9 +2068,7 @@ export type UiStoreState = {
 } & DialogStates;
 
 export type DialogStates = {
-  isHelpDialogOpen: boolean;
   isSettingDialogOpen: boolean;
-  isModelManageDialogOpen: boolean;
   isCharacterOrderDialogOpen: boolean;
   isDefaultStyleSelectDialogOpen: boolean;
   isHotkeySettingDialogOpen: boolean;
@@ -2045,6 +2080,9 @@ export type DialogStates = {
   isUpdateNotificationDialogOpen: boolean;
   isExportSongAudioDialogOpen: boolean;
   isImportSongProjectDialogOpen: boolean;
+  isPresetManageDialogOpen: boolean;
+  isModelManageDialogOpen: boolean;
+  isHelpDialogOpen: boolean;
 };
 
 export type UiStoreTypes = {
@@ -2114,16 +2152,12 @@ export type UiStoreTypes = {
     action(payload: WarningDialogOptions): TextDialogResult;
   };
 
+  SHOW_NOTIFY: {
+    action(payload: NotifyOption): void;
+  };
+
   SHOW_NOTIFY_AND_NOT_SHOW_AGAIN_BUTTON: {
     action(payload: NotifyAndNotShowAgainButtonOption): void;
-  };
-
-  SHOW_LOADING_SCREEN: {
-    action(payload: LoadingScreenOption): void;
-  };
-
-  HIDE_ALL_LOADING_SCREEN: {
-    action(): void;
   };
 
   ON_VUEX_READY: {
@@ -2321,25 +2355,28 @@ export type DictionaryStoreTypes = {
   };
   ADD_WORD: {
     action(payload: {
-      surface: string;
-      pronunciation: string;
-      accentType: number;
+      surface: string[];
+      pronunciation: string[];
+      accentType: number[];
       wordType: WordTypes;
       priority: number;
     }): Promise<string>;
   };
-  REWRITE_WORD: {
+  UPDATE_WORD: {
     action(payload: {
       wordUuid: string;
-      surface: string;
-      pronunciation: string;
-      accentType: number;
+      surface: string[];
+      pronunciation: string[];
+      accentType: number[];
       wordType: WordTypes;
       priority: number;
     }): Promise<void>;
   };
   DELETE_WORD: {
     action(payload: { wordUuid: string }): Promise<void>;
+  };
+  IMPORT_USER_DICT: {
+    action(payload: { importedDict: Record<string, UserDictWord> }): Promise<void>;
   };
   SYNC_ALL_USER_DICT: {
     action(): Promise<void>;
@@ -2413,6 +2450,14 @@ type AllStoreTypes = (
 export type AllGetters = StoreType<AllStoreTypes, "getter">;
 export type AllMutations = StoreType<AllStoreTypes, "mutation">;
 export type AllActions = StoreType<AllStoreTypes, "action">;
+
+export type ActionContext = DotNotationActionContext<
+  State,
+  State,
+  AllGetters,
+  AllActions,
+  AllMutations
+>;
 
 export const commandMutationsCreator = <S, M extends MutationsBase>(
   arg: PayloadRecipeTree<S, M>,

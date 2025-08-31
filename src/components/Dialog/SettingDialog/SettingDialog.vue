@@ -1,6 +1,6 @@
 <template>
   <QDialog
-    v-model="settingDialogOpenedComputed"
+    v-model="dialogOpened"
     maximized
     transitionShow="jump-up"
     transitionHide="jump-down"
@@ -17,7 +17,7 @@
               icon="sym_r_close"
               color="display"
               aria-label="設定を閉じる"
-              @click="settingDialogOpenedComputed = false"
+              @click="dialogOpened = false"
             />
             <QToolbarTitle class="text-display">オプション</QToolbarTitle>
           </QToolbar>
@@ -61,26 +61,17 @@
                   対応する GPU が搭載されていないため、GPU モードは利用できません。
                 </QTooltip>
               </ButtonToggleCell>
-              <QCardActions class="q-px-md bg-surface-darken">
-                <div>音声のサンプリングレート</div>
-                <div
-                  aria-label="再生と保存時の音声のサンプリングレートを変更できます（サンプリングレートを上げても音声の品質は上がりません）。"
-                >
-                  <QIcon name="sym_r_help_outline" size="sm" class="help-hover-icon">
-                    <QTooltip
-                      :delay="150"
-                      anchor="center right"
-                      self="center left"
-                      transitionShow="jump-right"
-                      transitionHide="jump-left"
-                    >
-                      再生・保存時の音声のサンプリングレートを変更できます。サンプリングレートを上げても音声の品質は上がりません。
-                    </QTooltip>
-                  </QIcon>
+              <QCardActions class="no-wrap q-px-md bg-surface-darken">
+                <div>
+                  <div>音声のサンプリングレート</div>
+                  <div class="text-caption">
+                    再生・保存時の音声のサンプリングレートを変更できます。サンプリングレートを上げても音声の品質は上がりません。
+                  </div>
                 </div>
                 <QSpace />
                 <QSelect
                   v-model="outputSamplingRate"
+                  style="flex-shrink: 0"
                   borderless
                   dense
                   name="samplingRate"
@@ -183,22 +174,12 @@
                 :modelValue="enableRubyNotation"
                 @update:modelValue="changeEnableRubyNotation"
               />
-              <QCardActions class="q-px-md bg-surface-darken">
-                <div>非表示にしたヒントを全て再表示</div>
-                <div
-                  aria-label="過去に非表示にしたヒントを全て再表示できます。"
-                >
-                  <QIcon name="sym_r_help_outline" size="sm" class="help-hover-icon">
-                    <QTooltip
-                      :delay="150"
-                      anchor="center right"
-                      self="center left"
-                      transitionShow="jump-right"
-                      transitionHide="jump-left"
-                    >
-                      過去に非表示にしたヒントを全て再表示できます。
-                    </QTooltip>
-                  </QIcon>
+              <QCardActions class="no-wrap q-px-md bg-surface-darken">
+                <div>
+                  <div>非表示にしたヒントを全て再表示</div>
+                  <div class="text-caption">
+                    過去に非表示にしたヒントを全て再表示できます。
+                  </div>
                 </div>
                 <QSpace />
                 <!-- ボタンクリックのフィードバックのためのチェックマーク -->
@@ -232,22 +213,12 @@
               <QCardActions>
                 <h5 class="text-h5">保存</h5>
               </QCardActions>
-              <QCardActions class="q-px-md bg-surface-darken">
-                <div>書き出し先を固定</div>
-                <div
-                  aria-label="ON にすると、書き出し先フォルダをあらかじめ指定できます。"
-                >
-                  <QIcon name="sym_r_help_outline" size="sm" class="help-hover-icon">
-                    <QTooltip
-                      :delay="150"
-                      anchor="center right"
-                      self="center left"
-                      transitionShow="jump-right"
-                      transitionHide="jump-left"
-                    >
-                      ON にすると、書き出し先フォルダをあらかじめ指定できます。
-                    </QTooltip>
-                  </QIcon>
+              <QCardActions class="no-wrap q-px-md bg-surface-darken">
+                <div>
+                  <div>書き出し先を固定</div>
+                  <div class="text-caption">
+                    ON にすると、書き出し先フォルダをあらかじめ指定できます。
+                  </div>
                 </div>
                 <QSpace />
                 <QInput
@@ -295,40 +266,30 @@
               </QCardActions>
 
               <FileNameTemplateDialog
-                  v-model:open-dialog="showAudioFilePatternEditDialog"
-                  :savedTemplate="audioFileNamePattern"
-                  :defaultTemplate="DEFAULT_AUDIO_FILE_NAME_TEMPLATE"
-                  :availableTags="[
-                    'index',
-                    'characterName',
-                    'styleName',
-                    'text',
-                    'date',
-                    'projectName',
-                  ]"
-                  :fileNameBuilder="buildAudioFileNameFromRawData"
-                  extension=".wav"
-                  @update:template="
-                    handleSavingSettingChange('fileNamePattern', $event)
-                  "
-                />
+                v-model:dialogOpened="showAudioFilePatternEditDialog"
+                :savedTemplate="audioFileNamePattern"
+                :defaultTemplate="DEFAULT_AUDIO_FILE_NAME_TEMPLATE"
+                :availableTags="[
+                  'index',
+                  'characterName',
+                  'styleName',
+                  'text',
+                  'date',
+                  'projectName',
+                ]"
+                :fileNameBuilder="buildAudioFileNameFromRawData"
+                extension=".wav"
+                @update:template="
+                  handleSavingSettingChange('fileNamePattern', $event)
+                "
+              />
 
-              <QCardActions class="q-px-md bg-surface-darken">
-                <div>書き出しファイル名パターン</div>
-                <div
-                  aria-label="書き出し時のファイル名パターンをカスタマイズできます。"
-                >
-                  <QIcon name="sym_r_help_outline" size="sm" class="help-hover-icon">
-                    <QTooltip
-                      :delay="150"
-                      anchor="center right"
-                      self="center left"
-                      transitionShow="jump-right"
-                      transitionHide="jump-left"
-                    >
-                      書き出し時のファイル名パターンをカスタマイズできます。
-                    </QTooltip>
-                  </QIcon>
+              <QCardActions class="no-wrap q-px-md bg-surface-darken">
+                <div>
+                  <div>書き出しファイル名パターン</div>
+                  <div class="text-caption">
+                    書き出し時のファイル名パターンをカスタマイズできます。
+                  </div>
                 </div>
                 <QSpace />
                 <div class="q-px-sm text-ellipsis">
@@ -436,25 +397,17 @@
                 "
               />
               <QCardActions
-                class="q-px-md bg-surface-darken"
+                class="no-wrap q-px-md bg-surface-darken"
                 :class="{ disabled: !canSetAudioOutputDevice }"
               >
-                <div>再生デバイス</div>
-                <div aria-label="音声の再生デバイスを変更できます。">
-                  <QIcon name="sym_r_help_outline" size="sm" class="help-hover-icon">
-                    <QTooltip
-                      :delay="150"
-                      anchor="center right"
-                      self="center left"
-                      transitionShow="jump-right"
-                      transitionHide="jump-left"
-                    >
-                      音声の再生デバイスを変更できます。
-                      <template v-if="!canSetAudioOutputDevice">
-                        この機能はお使いの環境でサポートされていないため、使用できません。
-                      </template>
-                    </QTooltip>
-                  </QIcon>
+                <div>
+                  <div>再生デバイス</div>
+                  <div class="text-caption">
+                    音声の再生デバイスを変更できます。
+                    <template v-if="!canSetAudioOutputDevice">
+                      この機能はお使いの環境でサポートされていないため、使用できません。
+                    </template>
+                  </div>
                 </div>
                 <QSpace />
                 <QSelect
@@ -561,25 +514,15 @@ import {
   RootMiscSettingType,
   EngineId,
 } from "@/type/preload";
-import { createLogger } from "@/domain/frontend/log";
+import { createLogger } from "@/helpers/log";
 import { useRootMiscSetting } from "@/composables/useRootMiscSetting";
 
 type SamplingRateOption = EngineSettingType["outputSamplingRate"];
 
-const props = defineProps<{
-  modelValue: boolean;
-}>();
-const emit = defineEmits<{
-  (e: "update:modelValue", val: boolean): void;
-}>();
+const dialogOpened = defineModel<boolean>("dialogOpened");
 
 const store = useStore();
 const { warn } = createLogger("SettingDialog");
-
-const settingDialogOpenedComputed = computed({
-  get: () => props.modelValue,
-  set: (val) => emit("update:modelValue", val),
-});
 
 const engineUseGpu = computed({
   get: () => {
@@ -747,16 +690,10 @@ const acceptRetrieveTelemetryComputed = computed({
 });
 
 const changeUseGpu = async (useGpu: boolean) => {
-  void store.actions.SHOW_LOADING_SCREEN({
-    message: "起動モードを変更中です...",
-  });
-
   await store.actions.CHANGE_USE_GPU({
     useGpu,
     engineId: selectedEngineId.value,
   });
-
-  void store.actions.HIDE_ALL_LOADING_SCREEN();
 };
 
 const changeinheritAudioInfo = async (inheritAudioInfo: boolean) => {
@@ -932,6 +869,14 @@ const renderEngineNameLabel = (engineId: EngineId) => {
   margin-left: 6px;
   color: colors.$display;
   opacity: 0.5;
+}
+
+.text-caption {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  letter-spacing: 0.03333em;
+  margin-top: 2px;
+  color: #c6c6c6;
 }
 
 .hotkey-table {

@@ -77,36 +77,29 @@ export type TextAsset = {
 };
 
 export interface Sandbox {
-  getAppInfos(): Promise<AppInfos>;
   getTextAsset<K extends keyof TextAsset>(textType: K): Promise<TextAsset[K]>;
   getAltPortInfos(): Promise<AltPortInfos>;
+  getInitialProjectFilePath(): Promise<string | undefined>;
   showSaveDirectoryDialog(obj: { title: string }): Promise<string | undefined>;
-  showVvppOpenDialog(obj: {
-    title: string;
-    defaultPath?: string;
-  }): Promise<string | undefined>;
   showOpenDirectoryDialog(obj: { title: string }): Promise<string | undefined>;
-  showProjectSaveDialog(obj: {
+  showOpenFileDialog(obj: {
     title: string;
-    defaultPath?: string;
-  }): Promise<string | undefined>;
-  showProjectLoadDialog(obj: { title: string }): Promise<string[] | undefined>;
-  showImportFileDialog(obj: {
-    title: string;
-    name?: string;
-    extensions?: string[];
-  }): Promise<string | undefined>;
-  showExportFileDialog(obj: {
-    title: string;
-    defaultPath?: string;
-    extensionName: string;
+    name: string;
+    mimeType: string;
     extensions: string[];
+    defaultPath?: string;
+  }): Promise<string | undefined>;
+  showSaveFileDialog(obj: {
+    title: string;
+    name: string;
+    extensions: string[];
+    defaultPath?: string;
   }): Promise<string | undefined>;
   writeFile(obj: {
     filePath: string;
     buffer: ArrayBuffer | Uint8Array;
   }): Promise<Result<undefined>>;
-  readFile(obj: { filePath: string }): Promise<Result<ArrayBuffer>>;
+  readFile(obj: { filePath: string }): Promise<Result<Uint8Array>>;
   isAvailableGPUMode(): Promise<boolean>;
   isMaximizedWindow(): Promise<boolean>;
   onReceivedIPCMsg(listeners: {
@@ -299,11 +292,11 @@ export type MorphableTargetInfoTable = Record<
   StyleId,
   | undefined
   | Record<
-      StyleId,
-      {
-        isMorphable: boolean;
-      }
-    >
+    StyleId,
+    {
+      isMorphable: boolean;
+    }
+  >
 >;
 
 export type HotkeyReturnType =
@@ -370,6 +363,7 @@ export const experimentalSettingSchema = z.object({
   enableMorphing: z.boolean().default(true),
   enableMultiSelect: z.boolean().default(true),
   shouldKeepTuningOnTextChange: z.boolean().default(true),
+  showParameterPanel: z.boolean().default(false),
 });
 
 export type ExperimentalSettingType = z.infer<typeof experimentalSettingSchema>;
@@ -398,7 +392,7 @@ export const rootMiscSettingSchema = z.object({
     .default("PERIOD_AND_NEW_LINE"),
   splitterPosition: splitterPositionSchema.default({}),
   enablePreset: z.boolean().default(true), // プリセット機能
-  shouldApplyDefaultPresetOnVoiceChanged: z.boolean().default(true), // スタイル変更時にデフォルトプリセットを適用するか
+  shouldApplyDefaultPresetOnVoiceChanged: z.boolean().default(false), // スタイル変更時にデフォルトプリセットを適用するか
   enableMultiEngine: z.boolean().default(true),
   enableMemoNotation: z.boolean().default(false), // メモ記法を有効にするか
   enableRubyNotation: z.boolean().default(false), // ルビ記法を有効にするか
@@ -467,7 +461,7 @@ export function getConfigSchema({ isMac }: { isMac: boolean }) {
                 tempoDynamicsScale: z.number().optional(), // AivisSpeech 固有のフィールド
                 pitchScale: z.number(),
                 volumeScale: z.number(),
-                pauseLengthScale: z.number(),
+                pauseLengthScale: z.number().default(1), // バージョン更新での追加フィールドなので、保険としてデフォルトで1を設定
                 prePhonemeLength: z.number(),
                 postPhonemeLength: z.number(),
                 morphingInfo: z
@@ -510,7 +504,7 @@ export type ConfigType = z.infer<ReturnType<typeof getConfigSchema>>;
 // workaround. SystemError(https://nodejs.org/api/errors.html#class-systemerror)が2022/05/19時点ではNodeJSの型定義に記述されていないためこれを追加しています。
 export class SystemError extends Error {
   code?: string | undefined;
-  constructor(message: string, code?: string | undefined) {
+  constructor(message: string, code?: string) {
     super(message);
 
     this.name = new.target.name;

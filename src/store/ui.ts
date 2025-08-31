@@ -17,17 +17,16 @@ import {
   MessageDialogOptions,
   ConfirmDialogOptions,
   WarningDialogOptions,
-  LoadingScreenOption,
   NotifyAndNotShowAgainButtonOption,
+  NotifyOption,
   connectAndExportTextWithDialog,
   generateAndConnectAndSaveAudioWithDialog,
   generateAndSaveOneAudioWithDialog,
-  hideAllLoadingScreen,
   multiGenerateAndSaveAudioWithDialog,
   showAlertDialog,
   showConfirmDialog,
-  showLoadingScreen,
   showMessageDialog,
+  showNotify,
   showNotifyAndNotShowAgainButton,
   showWarningDialog,
 } from "@/components/Dialog/Dialog";
@@ -70,11 +69,9 @@ export const uiStoreState: UiStoreState = {
   reloadingLock: false,
   inheritAudioInfo: true,
   activePointScrollMode: "OFF",
-  isHelpDialogOpen: false,
   isSettingDialogOpen: false,
   isHotkeySettingDialogOpen: false,
   isToolbarSettingDialogOpen: false,
-  isModelManageDialogOpen: false,
   isCharacterOrderDialogOpen: false,
   isDefaultStyleSelectDialogOpen: false,
   isAcceptRetrieveTelemetryDialogOpen: false,
@@ -84,6 +81,9 @@ export const uiStoreState: UiStoreState = {
   isUpdateNotificationDialogOpen: false,
   isExportSongAudioDialogOpen: false,
   isImportSongProjectDialogOpen: false,
+  isPresetManageDialogOpen: false,
+  isModelManageDialogOpen: false,
+  isHelpDialogOpen: false,
   isMaximized: false,
   isPinned: false,
   isFullscreen: false,
@@ -232,21 +232,15 @@ export const uiStore = createPartialStore<UiStoreTypes>({
     }),
   },
 
+  SHOW_NOTIFY: {
+    action({ actions }, payload: NotifyOption) {
+      showNotify({ actions }, payload);
+    },
+  },
+
   SHOW_NOTIFY_AND_NOT_SHOW_AGAIN_BUTTON: {
     action({ actions }, payload: NotifyAndNotShowAgainButtonOption) {
       showNotifyAndNotShowAgainButton({ actions }, payload);
-    },
-  },
-
-  SHOW_LOADING_SCREEN: {
-    action(_, payload: LoadingScreenOption) {
-      showLoadingScreen(payload);
-    },
-  },
-
-  HIDE_ALL_LOADING_SCREEN: {
-    action() {
-      hideAllLoadingScreen();
     },
   },
 

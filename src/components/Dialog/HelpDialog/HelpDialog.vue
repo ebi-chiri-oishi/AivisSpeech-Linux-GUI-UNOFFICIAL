@@ -1,6 +1,6 @@
 <template>
   <QDialog
-    v-model="modelValueComputed"
+    v-model="dialogOpened"
     maximized
     transitionShow="jump-up"
     transitionHide="jump-down"
@@ -56,7 +56,7 @@
                       icon="sym_r_close"
                       color="display"
                       aria-label="ヘルプを閉じる"
-                      @click="modelValueComputed = false"
+                      @click="dialogOpened = false"
                     />
                     <QToolbarTitle class="text-display"> ヘルプ </QToolbarTitle>
                     <QBtn
@@ -102,7 +102,8 @@ import ContactInfo from "./ContactInfo.vue";
 import { UpdateInfo as UpdateInfoObject, UrlString } from "@/type/preload";
 import { useStore } from "@/store";
 import { useFetchNewUpdateInfos } from "@/composables/useFetchNewUpdateInfos";
-import { createLogger } from "@/domain/frontend/log";
+import { createLogger } from "@/helpers/log";
+import { getAppInfos } from "@/domain/appInfo";
 
 type PageItem = {
   type: "item";
@@ -118,17 +119,7 @@ type PageSeparator = {
 };
 type PageData = PageItem | PageSeparator;
 
-const props = defineProps<{
-  modelValue: boolean;
-}>();
-const emit = defineEmits<{
-  (e: "update:modelValue", val: boolean): void;
-}>();
-
-const modelValueComputed = computed({
-  get: () => props.modelValue,
-  set: (val) => emit("update:modelValue", val),
-});
+const dialogOpened = defineModel<boolean>("dialogOpened", { default: false });
 
 // エディタのアップデート確認
 const store = useStore();
@@ -143,7 +134,7 @@ if (!import.meta.env.VITE_LATEST_UPDATE_INFOS_URL) {
   );
 }
 const newUpdateResult = useFetchNewUpdateInfos(
-  () => window.backend.getAppInfos().then((obj) => obj.version), // アプリのバージョン
+  () => getAppInfos().version,
   UrlString(import.meta.env.VITE_LATEST_UPDATE_INFOS_URL),
 );
 

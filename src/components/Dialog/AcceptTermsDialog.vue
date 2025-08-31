@@ -1,6 +1,6 @@
 <template>
   <QDialog
-    v-model="modelValueComputed"
+    v-model="dialogOpened"
     maximized
     transitionShow="jump-up"
     transitionHide="jump-down"
@@ -52,33 +52,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from "vue";
+import { ref, onMounted } from "vue";
 import { useStore } from "@/store";
 import { useMarkdownIt } from "@/plugins/markdownItPlugin";
 
-const props = defineProps<{
-  modelValue: boolean;
-}>();
-const emit = defineEmits<{
-  (e: "update:modelValue", value: boolean): void;
-}>();
+const dialogOpened = defineModel<boolean>("dialogOpened", { default: false });
 
 const store = useStore();
-
-const modelValueComputed = computed({
-  get: () => props.modelValue,
-  set: (val) => emit("update:modelValue", val),
-});
 
 const handler = (acceptTerms: boolean) => {
   void store.actions.SET_ACCEPT_TERMS({
     acceptTerms: acceptTerms ? "Accepted" : "Rejected",
   });
-  !acceptTerms
-    ? void store.actions.CHECK_EDITED_AND_NOT_SAVE({ closeOrReload: "close" })
-    : undefined;
+  if (!acceptTerms) {
+    void store.actions.CHECK_EDITED_AND_NOT_SAVE({ closeOrReload: "close" });
+  }
 
-  modelValueComputed.value = false;
+  dialogOpened.value = false;
 };
 
 const md = useMarkdownIt();

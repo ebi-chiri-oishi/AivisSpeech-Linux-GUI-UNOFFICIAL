@@ -1,6 +1,6 @@
 <template>
   <QDialog
-    v-model="dictionaryManageDialogOpenedComputed"
+    v-model="dialogOpened"
     maximized
     transitionShow="jump-up"
     transitionHide="jump-down"
@@ -22,13 +22,31 @@
               読み方＆アクセント辞書
             </QToolbarTitle>
             <QBtn
+              flat
+              icon="sym_r_file_upload"
+              label="インポート"
+              color="display"
+              class="text-bold q-px-sm q-mr-sm"
+              :disable="uiLocked || isNewWordEditing"
+              @click="discardOrNotDialog(handleImportDictionary)"
+            />
+            <QBtn
+              flat
+              icon="sym_r_file_download"
+              label="エクスポート"
+              color="display"
+              class="text-bold q-px-sm q-mr-sm"
+              :disable="uiLocked || isNewWordEditing"
+              @click="discardOrNotDialog(handleExportDictionary)"
+            />
+            <QBtn
               outline
               icon="sym_r_add"
               label="追加"
               textColor="display"
               class="text-bold"
-              :disable="uiLocked"
-              @click="newWord"
+              :disable="uiLocked || isNewWordEditing"
+              @click="discardOrNotDialog(addNewWord)"
             />
           </QToolbar>
         </QHeader>
@@ -48,9 +66,9 @@
           </div>
           <div class="col-4 word-list-col">
             <div
-              v-if="wordEditing && isNewWordEditing"
+              v-if="isWordEditing && isNewWordEditing"
               class="word-list-disable-overlay"
-              @click="discardOrNotDialog(cancel)"
+              @click="discardOrNotDialog(toInitialState)"
             ></div>
             <QList class="word-list">
               <QItem
@@ -62,14 +80,18 @@
                 :active="selectedId === key"
                 class="word-list-item"
                 activeClass="active-word"
-                @click="selectWord(key)"
+                @click="discardOrNotDialog(() => selectWord(key))"
               >
                 <QItemSection>
-                  <QItemLabel class="text-display">{{
-                    value.surface
-                  }}</QItemLabel>
+                  <QItemLabel v-if="value.stem.join('') !== value.surface" class="text-display">
+                    <!-- stem を連結した文字列と surface (エンジンによって正規化される) が異なる場合のみ両方を表示する -->
+                    {{ value.stem.join("") }} ({{ value.surface }})
+                  </QItemLabel>
+                  <QItemLabel v-else class="text-display">
+                    {{ value.surface }}
+                  </QItemLabel>
                   <QItemLabel caption class="row">
-                    <span>{{ value.yomi }} [{{ wordTypeLabels[getWordTypeFromPartOfSpeech(value)] }}]</span>
+                    <span>{{ value.pronunciation.join("") }} [{{ wordTypeLabels[getWordTypeFromPartOfSpeech(value)] }}]</span>
                     <span class="q-ml-auto">優先度:{{ value.priority }}</span>
                   </QItemLabel>
                 </QItemSection>
@@ -77,317 +99,124 @@
             </QList>
           </div>
 
-          <DictionaryEditWordDialog />
+          <!-- 辞書が空の場合のプレースホルダ -->
+          <div
+            v-if="!loadingDictState && Object.keys(userDict).length === 0 && !isWordEditing"
+            class="col-8 empty-state"
+          >
+            <div class="empty-state-message">
+              <div class="text-h6">辞書に単語が登録されていません</div>
+              <div class="text-caption q-mt-sm">
+                画面右上の「追加」ボタンから、辞書に登録したい単語を追加できます。
+              </div>
+            </div>
+          </div>
+          <DictionaryEditWordDialog
+            v-else
+            :uiLocked
+            :isWordEditing
+            :isWordChanged
+            :isNewWordEditing
+            :selectedId
+            :wordAccentPhraseItems
+            :wordType
+            :wordPriority
+            @update:surface="updateSurface"
+            @update:pronunciation="updatePronunciation"
+            @update:wordType="wordType = $event"
+            @update:wordPriority="wordPriority = $event"
+            @changeAccentPosition="changeAccentPosition"
+            @addWordAccentPhraseItem="addWordAccentPhraseItem"
+            @removeWordAccentPhraseItem="removeWordAccentPhraseItem"
+            @resetWord="handleResetWord"
+            @deleteWord="handleDeleteWord"
+            @saveWord="handleSaveWord"
+            @cancel="discardOrNotDialog(toInitialState)"
+          />
         </QPage>
       </QPageContainer>
     </QLayout>
   </QDialog>
 </template>
 
-<script lang="ts">
-import { Ref, ComputedRef } from "vue";
-
-export const dictionaryManageDialogContextKey = "dictionaryManageDialogContext";
-
-export interface DictionaryManageDialogContext {
-  wordEditing: Ref<boolean>;
-  surfaceInput: Ref<QInput | undefined>;
-  selectedId: Ref<string>;
-  uiLocked: Ref<boolean>;
-  userDict: Ref<Record<string, UserDictWord>>;
-  isOnlyHiraOrKana: Ref<boolean>;
-  accentPhrase: Ref<AccentPhrase | undefined>;
-  voiceComputed: ComputedRef<{
-    engineId: EngineId;
-    speakerId: SpeakerId;
-    styleId: StyleId;
-  }>;
-  surface: Ref<string>;
-  yomi: Ref<string>;
-  wordType: Ref<WordTypes>;
-  wordTypeLabels: Ref<Record<WordTypes, string>>;
-  wordPriority: Ref<number>;
-  isWordChanged: ComputedRef<boolean>;
-  isNewWordEditing: Ref<boolean>;
-  setYomi: (text: string, changeWord?: boolean) => Promise<void>;
-  createUILockAction: <T>(action: Promise<T>) => Promise<T>;
-  loadingDictProcess: () => Promise<void>;
-  computeRegisteredAccent: () => number;
-  discardOrNotDialog: (okCallback: () => void) => Promise<void>;
-  toWordEditingState: () => void;
-  toWordSelectedState: () => void;
-  cancel: () => void;
-  deleteWord: () => Promise<void>;
-  getWordTypeFromPartOfSpeech: (dictData: UserDictWord | undefined) => WordTypes;
-}
-</script>
-
 <script setup lang="ts">
-import { computed, ref, watch, provide } from "vue";
-import { QInput } from "quasar";
+import { watch } from "vue";
 import DictionaryEditWordDialog from "./DictionaryEditWordDialog.vue";
+import { hideAllLoadingScreen, showLoadingScreen } from "@/components/Dialog/Dialog";
+import { useDictionaryEditor } from "@/composables/useDictionaryEditor";
+import { getWordTypeFromPartOfSpeech, wordTypeLabels } from "@/domain/japanese";
+import { createLogger } from "@/helpers/log";
+import { ResponseError } from "@/openapi";
 import { useStore } from "@/store";
-import { AccentPhrase, UserDictWord, WordTypes } from "@/openapi";
-import { EngineId, SpeakerId, StyleId } from "@/type/preload";
-import {
-  convertHiraToKana,
-  convertLongVowel,
-  createKanaRegex,
-} from "@/domain/japanese";
 
-const defaultWordType = WordTypes.ProperNoun;
-const defaultDictPriority = 5;
-
-const props = defineProps<{
-  modelValue: boolean;
-}>();
-const emit = defineEmits<{
-  (e: "update:modelValue", v: boolean): void;
-}>();
+const dialogOpened = defineModel<boolean>("dialogOpened", { default: false });
 
 const store = useStore();
 
-const dictionaryManageDialogOpenedComputed = computed({
-  get: () => props.modelValue,
-  set: (val) => emit("update:modelValue", val),
-});
-const uiLocked = ref(false); // ダイアログ内でstore.getters.UI_LOCKEDは常にtrueなので独自に管理
+const log = createLogger("DictionaryManageDialog");
 
-const loadingDictState = ref<null | "loading" | "synchronizing">("loading");
-const userDict = ref<Record<string, UserDictWord>>({});
+// useDictionaryEditorから編集ロジックと状態を取得
+const {
+  // 状態
+  uiLocked,
+  loadingDictState,
+  userDict,
+  isWordEditing,
+  isWordChanged,
+  isNewWordEditing,
+  selectedId,
+  wordAccentPhraseItems,
+  wordType,
+  wordPriority,
 
-const createUILockAction = function <T>(action: Promise<T>) {
-  uiLocked.value = true;
-  return action.finally(() => {
-    uiLocked.value = false;
-  });
-};
+  // 関数
+  createUILockAction,
+  loadUserDict,
+  addWordToEngine,
+  updateWordToEngine,
+  deleteWordFromEngine,
+  updateSurface,
+  updatePronunciation,
+  changeAccentPosition,
+  addWordAccentPhraseItem,
+  removeWordAccentPhraseItem,
+  toInitialState,
+  addNewWord,
+  selectWord,
+} = useDictionaryEditor();
 
-const loadingDictProcess = async () => {
-  if (store.state.engineIds.length === 0)
-    throw new Error("assert engineId.length > 0");
-
-  loadingDictState.value = "loading";
+// 辞書読み込みの処理
+async function loadingDictProcess() {
   try {
-    userDict.value = await createUILockAction(
-      store.actions.LOAD_ALL_USER_DICT(),
-    );
+    await loadUserDict();
   } catch {
     const result = await store.actions.SHOW_ALERT_DIALOG({
       title: "辞書の取得に失敗しました",
       message: "音声合成エンジンの再起動をお試しください。",
     });
     if (result === "OK") {
-      dictionaryManageDialogOpenedComputed.value = false;
+      dialogOpened.value = false;
     }
   }
-  loadingDictState.value = "synchronizing";
-  try {
-    await createUILockAction(store.actions.SYNC_ALL_USER_DICT());
-  } catch {
-    await store.actions.SHOW_ALERT_DIALOG({
-      title: "辞書の同期に失敗しました",
-      message: "音声合成エンジンの再起動をお試しください。",
-    });
-  }
-  loadingDictState.value = null;
-};
-watch(dictionaryManageDialogOpenedComputed, async (newValue) => {
+}
+
+// ダイアログが開かれた時に辞書を読み込む
+watch(dialogOpened, async (newValue) => {
   if (newValue) {
     await loadingDictProcess();
     toInitialState();
   }
 });
 
-const wordEditing = ref(false);
-const surfaceInput = ref<QInput>();
-const selectedId = ref("");
-const lastSelectedId = ref("");
-const surface = ref("");
-const yomi = ref("");
-
-const voiceComputed = computed(() => {
-  const userOrderedCharacterInfos =
-    store.getters.USER_ORDERED_CHARACTER_INFOS("talk");
-  if (userOrderedCharacterInfos == undefined)
-    throw new Error("assert USER_ORDERED_CHARACTER_INFOS");
-  if (store.state.engineIds.length === 0)
-    throw new Error("assert engineId.length > 0");
-  const characterInfo = userOrderedCharacterInfos[0].metas;
-  const speakerId = characterInfo.speakerUuid;
-  const { engineId, styleId } = characterInfo.styles[0];
-  return { engineId, speakerId, styleId };
-});
-
-const kanaRegex = createKanaRegex();
-const isOnlyHiraOrKana = ref(true);
-const accentPhrase = ref<AccentPhrase | undefined>();
-
-const setYomi = async (text: string, changeWord?: boolean) => {
-  const { engineId, styleId } = voiceComputed.value;
-
-  // テキスト長が0の時にエラー表示にならないように、テキスト長を考慮する
-  isOnlyHiraOrKana.value = !text.length || kanaRegex.test(text);
-  // 読みが変更されていない場合は、アクセントフレーズに変更を加えない
-  // ただし、読みが同じで違う単語が存在する場合が考えられるので、changeWordフラグを考慮する
-  // 「ガ」が自動挿入されるので、それを考慮してsliceしている
-  if (
-    text ==
-      accentPhrase.value?.moras
-        .map((v) => v.text)
-        .join("")
-        .slice(0, -1) &&
-    !changeWord
-  ) {
-    return;
-  }
-  if (isOnlyHiraOrKana.value && text.length) {
-    text = convertHiraToKana(text);
-    text = convertLongVowel(text);
-    accentPhrase.value = (
-      await createUILockAction(
-        store.actions.FETCH_ACCENT_PHRASES({
-          text: text + "ガ'",
-          engineId,
-          styleId,
-          isKana: true,
-        }),
-      )
-    )[0];
-    if (selectedId.value && userDict.value[selectedId.value].yomi === text) {
-      accentPhrase.value.accent = computeDisplayAccent();
-    }
-  } else {
-    accentPhrase.value = undefined;
-  }
-  yomi.value = text;
+// ダイアログを閉じる
+const closeDialog = () => {
+  dialogOpened.value = false;
 };
 
-// accent phraseにあるaccentと実際に登録するアクセントには差が生まれる
-// アクセントが自動追加される「ガ」に指定されている場合、
-// 実際に登録するaccentの値は0となるので、そうなるように処理する
-const computeRegisteredAccent = () => {
-  if (!accentPhrase.value) return 0;  // エラーにさせないために0を返す
-  let accent = accentPhrase.value.accent;
-  accent = accent === accentPhrase.value.moras.length ? 0 : accent;
-  return accent;
-};
-// computeの逆
-// 辞書から得たaccentが0の場合に、自動で追加される「ガ」の位置にアクセントを表示させるように処理する
-const computeDisplayAccent = () => {
-  if (!accentPhrase.value || !selectedId.value) return 0;  // エラーにさせないために0を返す
-  let accent = userDict.value[selectedId.value].accentType;
-  accent = accent === 0 ? accentPhrase.value.moras.length : accent;
-  return accent;
-};
-
-const wordType = ref<WordTypes>(defaultWordType);
-const wordTypeLabels = ref({
-  [WordTypes.ProperNoun]: "固有名詞",
-  [WordTypes.LocationName]: "地名",
-  [WordTypes.OrganizationName]: "組織・施設名",
-  [WordTypes.PersonName]: "人名",
-  [WordTypes.PersonFamilyName]: "人名 - 姓",
-  [WordTypes.PersonGivenName]: "人名 - 名",
-  [WordTypes.CommonNoun]: "一般名詞",
-  [WordTypes.Verb]: "動詞",
-  [WordTypes.Adjective]: "形容詞",
-  [WordTypes.Suffix]: "接尾辞",
-});
-
-// 品詞フィールドから WordTypes を推定する関数
-const getWordTypeFromPartOfSpeech = (dictData: UserDictWord | undefined): WordTypes => {
-  // 基本ないが、もし dictData が undefined の場合は固有名詞として扱う
-  if (!dictData) return WordTypes.ProperNoun;
-
-  const { partOfSpeech, partOfSpeechDetail1, partOfSpeechDetail2, partOfSpeechDetail3 } = dictData;
-  if (partOfSpeech === "名詞") {
-    if (partOfSpeechDetail1 === "固有名詞") {
-      if (partOfSpeechDetail2 === "地域" && partOfSpeechDetail3 === "一般") {
-        return WordTypes.LocationName;
-      }
-      if (partOfSpeechDetail2 === "組織") {
-        return WordTypes.OrganizationName;
-      }
-      if (partOfSpeechDetail2 === "人名") {
-        if (partOfSpeechDetail3 === "一般") {
-          return WordTypes.PersonName;
-        }
-        if (partOfSpeechDetail3 === "姓") {
-          return WordTypes.PersonFamilyName;
-        }
-        if (partOfSpeechDetail3 === "名") {
-          return WordTypes.PersonGivenName;
-        }
-      }
-      return WordTypes.ProperNoun;
-    }
-    if (partOfSpeechDetail1 === "接尾") return WordTypes.Suffix;
-    return WordTypes.CommonNoun;
-  }
-  if (partOfSpeech === "動詞") return WordTypes.Verb;
-  if (partOfSpeech === "形容詞") return WordTypes.Adjective;
-
-  // デフォルトは固有名詞
-  return WordTypes.ProperNoun;
-};
-
-const wordPriority = ref(defaultDictPriority);
-
-// 操作（ステートの移動）
-const isWordChanged = computed(() => {
-  if (selectedId.value === "") {
-    return (
-      surface.value != "" && yomi.value != "" && accentPhrase.value != undefined
-    );
-  }
-  // 一旦代入することで、userDictそのものが更新された時もcomputedするようにする
-  const dict = userDict.value;
-  const dictData = dict[selectedId.value];
-  const currentWordType = getWordTypeFromPartOfSpeech(dictData);
-  return (
-    dictData &&
-    (dictData.surface !== surface.value ||
-      dictData.yomi !== yomi.value ||
-      dictData.accentType !== computeRegisteredAccent() ||
-      currentWordType !== wordType.value ||
-      dictData.priority !== wordPriority.value)
-  );
-});
-
-const deleteWord = async () => {
-  const result = await store.actions.SHOW_WARNING_DIALOG({
-    title: "単語を削除しますか？",
-    message: `単語「${userDict.value[selectedId.value].surface}」を削除します。`,
-    actionName: "削除する",
-    isWarningColorButton: true,
-    cancel: "削除しない",
-  });
-  if (result === "OK") {
-    try {
-      void store.actions.SHOW_LOADING_SCREEN({
-        message: "単語を辞書から削除しています...",
-      });
-      await createUILockAction(
-        store.actions.DELETE_WORD({
-          wordUuid: selectedId.value,
-        }),
-      );
-    } catch {
-      void store.actions.SHOW_ALERT_DIALOG({
-        title: "単語の削除に失敗しました",
-        message: "音声合成エンジンの再起動をお試しください。",
-      });
-      return;
-    } finally {
-      await store.actions.HIDE_ALL_LOADING_SCREEN();
-    }
-    await loadingDictProcess();
-    toInitialState();
-  }
-};
-const discardOrNotDialog = async (okCallback: () => void) => {
-  if (isWordChanged.value) {
+// 保存前の変更の破棄を確認
+async function discardOrNotDialog(okCallback: () => void) {
+  // エントリが変更されているか、新しい単語を追加中の場合
+  if (isWordChanged.value || isNewWordEditing.value) {
     const result = await store.actions.SHOW_WARNING_DIALOG({
       title: "単語の追加・変更を破棄しますか？",
       message: "保存されていない変更内容は失われます。",
@@ -400,116 +229,156 @@ const discardOrNotDialog = async (okCallback: () => void) => {
   } else {
     okCallback();
   }
-};
+}
 
-const isNewWordEditing = ref(false);
-const newWord = () => {
-  const newWordImpl = () => {
-    isNewWordEditing.value = true;
-    selectedId.value = "";
-    surface.value = "";
-    void setYomi("");
-    wordType.value = defaultWordType;
-    wordPriority.value = defaultDictPriority;
-    editWord();
-  };
-
-  if (wordEditing.value && isWordChanged.value) {
-    void discardOrNotDialog(newWordImpl);
-  } else {
-    newWordImpl();
+const handleResetWord = async (id: string) => {
+  const result = await store.actions.SHOW_WARNING_DIALOG({
+    title: "単語の変更を破棄しますか？",
+    message: "保存されていない変更内容は失われます。",
+    actionName: "破棄する",
+    isWarningColorButton: true,
+  });
+  if (result === "OK") {
+    // 指定された ID の単語を選択し直す
+    selectWord(id);
   }
 };
-const editWord = () => {
-  toWordEditingState();
-};
-const selectWord = (id: string) => {
-  const selectWordImpl = () => {
-    selectedId.value = id;
-    surface.value = userDict.value[id].surface;
-    void setYomi(userDict.value[id].yomi, true);
-    wordType.value = getWordTypeFromPartOfSpeech(userDict.value[id]);
-    wordPriority.value = userDict.value[id].priority;
-    toWordSelectedState();
-    editWord();
-  };
 
-  if (wordEditing.value && isWordChanged.value) {
-    void discardOrNotDialog(selectWordImpl);
-  } else {
-    selectWordImpl();
+const handleDeleteWord = async () => {
+  const result = await store.actions.SHOW_WARNING_DIALOG({
+    title: "単語を削除しますか？",
+    message: `単語「${userDict.value[selectedId.value].stem.join("")}」を削除します。`,
+    actionName: "削除する",
+    isWarningColorButton: true,
+    cancel: "削除しない",
+  });
+  if (result === "OK") {
+    try {
+      showLoadingScreen({
+        message: "単語を辞書から削除しています...",
+      });
+      await deleteWordFromEngine(selectedId.value);
+    } catch {
+      return;
+    } finally {
+      hideAllLoadingScreen();
+    }
+    await loadingDictProcess();
+    toInitialState();
   }
 };
-const cancel = () => {
-  toInitialState();
-};
-const closeDialog = () => {
-  toDialogClosedState();
-};
 
-// ステートの移動
-// 初期状態
-const toInitialState = () => {
-  isNewWordEditing.value = false;
-  wordEditing.value = false;
-  selectedId.value = "";
-  surface.value = "";
-  void setYomi("");
-  wordType.value = defaultWordType;
-  wordPriority.value = defaultDictPriority;
+const handleSaveWord = async () => {
+  if (!wordAccentPhraseItems.value[0]?.accentPhrase)
+    throw new Error("accentPhrase === undefined");
 
-  // 辞書の最初の項目を選択する
-  if (Object.keys(userDict.value).length > 0) {
-    // 前回選択していた項目があればそれを選択、なければ最初の項目を選択
-    const targetKey = lastSelectedId.value && userDict.value[lastSelectedId.value]
-      ? lastSelectedId.value
-      : Object.keys(userDict.value)[0];
-    selectWord(targetKey);
+  try {
+    showLoadingScreen({
+      message: selectedId.value ? "変更を保存しています..." : "単語を辞書に追加しています...",
+    });
+
+    let wordId: string;
+    if (selectedId.value) {
+      // 既存単語の更新をエンジンに反映
+      await updateWordToEngine(selectedId.value);
+      wordId = selectedId.value;
+    } else {
+      // 新規単語の追加をエンジンに反映
+      wordId = await addWordToEngine();
+    }
+
+    await loadingDictProcess();
+
+    // 変更後の単語を選択
+    selectWord(wordId);
+  } catch (error) {
+    log.error(error);
+  } finally {
+    hideAllLoadingScreen();
   }
 };
-// 単語が選択されているだけの状態
-const toWordSelectedState = () => {
-  wordEditing.value = false;
-  // 選択された項目を記憶
-  lastSelectedId.value = selectedId.value;
-};
-// 単語が編集されている状態
-const toWordEditingState = () => {
-  wordEditing.value = true;
-  surfaceInput.value?.focus();
-};
-// ダイアログが閉じている状態
-const toDialogClosedState = () => {
-  dictionaryManageDialogOpenedComputed.value = false;
+
+const handleImportDictionary = async (): Promise<void> => {
+  try {
+    const filePath = await window.backend.showOpenFileDialog({
+      title: "ユーザー辞書をインポート",
+      name: "ユーザー辞書ファイル (JSON 形式)",
+      mimeType: "application/json",
+      extensions: ["json"],
+      defaultPath: "user_dict.json",
+    });
+    if (!filePath) return;
+
+    const fileResult = await window.backend.readFile({ filePath });
+    if (!fileResult.ok) {
+      throw new Error(`Failed to read file: ${fileResult.error.message}`);
+    }
+
+    const fileContent = new TextDecoder().decode(fileResult.value);
+    const importedDict = JSON.parse(fileContent);
+    await createUILockAction(store.actions.IMPORT_USER_DICT({ importedDict }));
+    // インポート後に辞書を再読み込み
+    await loadUserDict();
+    // エディタ上での変更を破棄するため、selectedId を再度選択する
+    selectWord(selectedId.value);
+    await store.actions.SHOW_MESSAGE_DIALOG({
+      type: "info",
+      title: "ユーザー辞書のインポートが完了しました",
+      message: "ユーザー辞書が正常にインポートされました。",
+    });
+  } catch (error) {
+    log.error(error);
+    if (error instanceof ResponseError) {
+      void store.actions.SHOW_ALERT_DIALOG({
+        title: "ユーザー辞書のインポートに失敗しました",
+        message: "ファイルの形式が正しくありません。\n" +
+                 `(HTTP Error ${error.response.status} / ${await error.response.text()})`,
+      });
+    } else {
+      await store.actions.SHOW_ALERT_DIALOG({
+        title: "ユーザー辞書のインポートに失敗しました",
+        message: "ファイルの形式が正しくありません。",
+      });
+    }
+  }
 };
 
-provide<DictionaryManageDialogContext>(dictionaryManageDialogContextKey, {
-  wordEditing,
-  surfaceInput,
-  selectedId,
-  uiLocked,
-  userDict,
-  isOnlyHiraOrKana,
-  accentPhrase,
-  voiceComputed,
-  surface,
-  yomi,
-  wordType,
-  wordTypeLabels,
-  wordPriority,
-  isWordChanged,
-  isNewWordEditing,
-  setYomi,
-  createUILockAction,
-  loadingDictProcess,
-  computeRegisteredAccent,
-  discardOrNotDialog,
-  toWordEditingState,
-  toWordSelectedState,
-  cancel,
-  deleteWord,
-  getWordTypeFromPartOfSpeech,
-});
+const handleExportDictionary = async (): Promise<void> => {
+  try {
+    // 辞書を JSON 形式でエクスポート (インデント: 4スペース)
+    const dictJson = JSON.stringify(userDict.value, null, 4);
+    const filePath = await window.backend.showSaveFileDialog({
+      title: "ユーザー辞書をエクスポート",
+      name: "ユーザー辞書ファイル (JSON 形式)",
+      extensions: ["json"],
+      defaultPath: "user_dict.json",
+    });
+    if (!filePath) return;
+    await window.backend.writeFile({
+      filePath,
+      buffer: new TextEncoder().encode(dictJson),
+    });
+    await store.actions.SHOW_MESSAGE_DIALOG({
+      type: "info",
+      title: "ユーザー辞書のエクスポートが完了しました",
+      message: "ユーザー辞書が正常にエクスポートされました。",
+    });
+  } catch (error) {
+    log.error(error);
+    if (error instanceof ResponseError) {
+      void store.actions.SHOW_ALERT_DIALOG({
+        title: "ユーザー辞書のエクスポートに失敗しました",
+        message: "ファイルの書き込みに失敗しました。\n" +
+                 `(HTTP Error ${error.response.status} / ${await error.response.text()})`,
+      });
+    } else {
+      await store.actions.SHOW_ALERT_DIALOG({
+        title: "ユーザー辞書のエクスポートに失敗しました",
+        message: "ファイルの書き込みに失敗しました。",
+      });
+    }
+  }
+};
 </script>
 
 <style lang="scss">
@@ -521,6 +390,17 @@ provide<DictionaryManageDialogContext>(dictionaryManageDialogContextKey, {
 <style lang="scss" scoped>
 @use "@/styles/colors" as colors;
 @use "@/styles/variables" as vars;
+
+// Empty state styles
+.empty-state {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: rgba(colors.$display-rgb, 0.7);
+  padding: 16px;
+}
 
 .word-list-col {
   border-right: solid 1px colors.$surface;

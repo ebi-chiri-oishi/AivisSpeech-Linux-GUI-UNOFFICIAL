@@ -27,10 +27,11 @@ import {
 } from './LibrarySpeaker';
 
 /**
- * AIVM (Aivis Voice Model) 仕様に準拠した音声合成モデルのメタデータ情報
- * AIVM マニフェストには、音声合成モデルに関連する全てのメタデータが含まれる
- * speakers フィールド内の話者情報は、VOICEVOX ENGINE との API 互換性のために
- * AIVM マニフェストを元に Speaker / SpeakerStyle / SpeakerInfo / StyleInfo モデルに変換したもの
+ * AIVM (Aivis Voice Model) 仕様に準拠した音声合成モデルのメタデータ情報。
+ * 
+ * AIVM マニフェストには、音声合成モデルに関連する全てのメタデータが含まれる。
+ * speakers フィールド内の話者情報は、VOICEVOX ENGINE との API 互換性のために、
+ * AIVM マニフェストを基に Speaker / SpeakerStyle / SpeakerInfo / StyleInfo モデルに変換したもの。
  * @export
  * @interface AivmInfo
  */
@@ -47,6 +48,12 @@ export interface AivmInfo {
      * @memberof AivmInfo
      */
     isUpdateAvailable: boolean;
+    /**
+     * 
+     * @type {boolean}
+     * @memberof AivmInfo
+     */
+    isPrivateModel: boolean;
     /**
      * 
      * @type {string}
@@ -86,6 +93,7 @@ export function instanceOfAivmInfo(value: object): boolean {
     let isInstance = true;
     isInstance = isInstance && "isLoaded" in value;
     isInstance = isInstance && "isUpdateAvailable" in value;
+    isInstance = isInstance && "isPrivateModel" in value;
     isInstance = isInstance && "latestVersion" in value;
     isInstance = isInstance && "filePath" in value;
     isInstance = isInstance && "fileSize" in value;
@@ -107,6 +115,7 @@ export function AivmInfoFromJSONTyped(json: any, ignoreDiscriminator: boolean): 
         
         'isLoaded': json['is_loaded'],
         'isUpdateAvailable': json['is_update_available'],
+        'isPrivateModel': json['is_private_model'],
         'latestVersion': json['latest_version'],
         'filePath': json['file_path'],
         'fileSize': json['file_size'],
@@ -126,6 +135,7 @@ export function AivmInfoToJSON(value?: AivmInfo | null): any {
         
         'is_loaded': value.isLoaded,
         'is_update_available': value.isUpdateAvailable,
+        'is_private_model': value.isPrivateModel,
         'latest_version': value.latestVersion,
         'file_path': value.filePath,
         'file_size': value.fileSize,

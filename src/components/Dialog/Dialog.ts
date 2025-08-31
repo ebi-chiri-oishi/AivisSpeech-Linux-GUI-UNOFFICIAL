@@ -12,6 +12,7 @@ import {
 } from "@/store/type";
 import { DotNotationDispatch } from "@/store/vuex";
 import { withProgress } from "@/store/ui";
+import { errorToMessage } from "@/helpers/errorHelper";
 
 type MediaType = "audio" | "text" | "project" | "label";
 
@@ -47,14 +48,18 @@ export type QuestionDialogOptions = {
   default?: number;
 };
 
+export type NotifyOption = {
+  message: string;
+  isWarning?: boolean;
+  icon?: string;
+};
+
 export type NotifyAndNotShowAgainButtonOption = {
   message: string;
   isWarning?: boolean;
   icon?: string;
   tipName: keyof ConfirmedTips;
 };
-
-export type LoadingScreenOption = { message: string };
 
 // 汎用ダイアログを表示
 
@@ -85,6 +90,14 @@ export const showAlertDialog = async (
   return await showMessageDialog({
     ...options,
     type: "error",
+  });
+};
+
+/** 例外からエラーダイアログを表示する便利関数 */
+export const showErrorDialog = async (title: string, e: unknown) => {
+  return showAlertDialog({
+    title,
+    message: errorToMessage(e),
   });
 };
 
@@ -367,6 +380,34 @@ export const notifyResult = (
 
 const NOTIFY_TIMEOUT = 7000;
 
+export const showNotify = (
+  {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    actions,
+  }: {
+    actions: DotNotationDispatch<AllActions>;
+  },
+  options: NotifyOption,
+) => {
+  options.icon ??= options.isWarning ? "warning" : "info";
+
+  const suffix = options.isWarning ? "-warning" : "";
+  Notify.create({
+    message: options.message,
+    html: true,
+    color: "toast" + suffix,
+    textColor: "toast-display" + suffix,
+    icon: options.isWarning ? "sym_r_warning" : "sym_r_info",
+    timeout: NOTIFY_TIMEOUT,
+    actions: [
+      {
+        label: "閉じる",
+        color: "toast-button-display" + suffix,
+      },
+    ],
+  });
+};
+
 export const showNotifyAndNotShowAgainButton = (
   {
     actions,
@@ -403,6 +444,8 @@ export const showNotifyAndNotShowAgainButton = (
     ],
   });
 };
+
+type LoadingScreenOption = { message: string };
 
 export const showLoadingScreen = (options: LoadingScreenOption) => {
   Loading.show({

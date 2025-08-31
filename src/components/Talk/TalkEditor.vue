@@ -75,6 +75,7 @@
                             class="draggable-cursor"
                             :audioKey="element"
                             @focusCell="focusCell"
+                            @duplicateCell="(event) => duplicateAudioItem(event.audioKey)"
                           />
                         </template>
                       </Draggable>
@@ -191,10 +192,19 @@ registerHotkeyWithCleanup({
 });
 registerHotkeyWithCleanup({
   editor: "talk",
-  name: "テキストを読み込む",
+  name: "テキストをつなげて書き出し",
   callback: () => {
     if (!uiLocked.value) {
       void store.actions.SHOW_CONNECT_AND_EXPORT_TEXT_DIALOG();
+    }
+  },
+});
+registerHotkeyWithCleanup({
+  editor: "talk",
+  name: "テキストを読み込む",
+  callback: () => {
+    if (!uiLocked.value) {
+      void store.actions.COMMAND_IMPORT_FROM_FILE({ type: "dialog" });
     }
   },
 });
@@ -214,7 +224,7 @@ registerHotkeyWithCleanup({
   name: "テキスト欄を複製",
   callback: () => {
     if (activeAudioKey.value != undefined) {
-      void duplicateAudioItem();
+      void duplicateAudioItem(activeAudioKey.value);
     }
   },
 });
@@ -397,8 +407,8 @@ const addAudioItem = async () => {
   });
   audioCellRefs[newAudioKey].focusCell({ focusTarget: "textField" });
 };
-const duplicateAudioItem = async () => {
-  const prevAudioKey = activeAudioKey.value;
+const duplicateAudioItem = async (audioKeyToDuplicate: AudioKey) => {
+  const prevAudioKey = audioKeyToDuplicate;
 
   // audioItemが選択されていない状態で押されたら何もしない
   if (prevAudioKey == undefined) return;
@@ -407,7 +417,7 @@ const duplicateAudioItem = async () => {
 
   const newAudioKey = await store.actions.COMMAND_REGISTER_AUDIO_ITEM({
     audioItem: structuredClone(prevAudioItem),
-    prevAudioKey: activeAudioKey.value,
+    prevAudioKey: prevAudioKey,
   });
   audioCellRefs[newAudioKey].focusCell({ focusTarget: "textField" });
 };

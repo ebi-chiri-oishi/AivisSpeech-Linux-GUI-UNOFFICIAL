@@ -1,7 +1,7 @@
 import { EngineState, EngineStoreState, EngineStoreTypes } from "./type";
 import { createUILockAction } from "./ui";
 import { createPartialStore } from "./vuex";
-import { createLogger } from "@/domain/frontend/log";
+import { createLogger } from "@/helpers/log";
 import type { EngineManifest } from "@/openapi";
 import type { EngineId, EngineInfo } from "@/type/preload";
 
@@ -13,7 +13,11 @@ export const engineStoreState: EngineStoreState = {
 const { info, error } = createLogger("store/engine");
 
 export const engineStore = createPartialStore<EngineStoreTypes>({
-  GET_ENGINE_INFOS: {
+  /**
+   * backendのエンジン情報をstateに同期して初期化する。
+   * エンジンIDも同期する。
+   */
+  PULL_AND_INIT_ENGINE_INFOS: {
     async action({ state, mutations }) {
       let engineInfos = await window.backend.engineInfos();
 
@@ -36,7 +40,8 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
     },
   },
 
-  GET_ONLY_ENGINE_INFOS: {
+  /** backendのエンジン情報をstateに同期する。 */
+  PULL_ENGINE_INFOS: {
     async action({ mutations }, { engineIds }) {
       const engineInfos = await window.backend.engineInfos();
       for (const engineInfo of engineInfos) {
@@ -76,7 +81,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
     },
   },
 
-  GET_ALT_PORT_INFOS: {
+  PULL_ALT_PORT_INFOS: {
     async action({ mutations }) {
       const altPortInfos = await window.backend.getAltPortInfos();
       mutations.SET_ALT_PORT_INFOS({ altPortInfos });
@@ -134,9 +139,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
                     async (instance) =>
                       [
                         engineId,
-                        await instance.invoke(
-                          "engineManifestEngineManifestGet",
-                        )({}),
+                        await instance.invoke("engineManifest")({}),
                       ] as const,
                   ),
             ),
@@ -195,7 +198,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
               .INSTANTIATE_ENGINE_CONNECTOR({
                 engineId,
               })
-              .then((instance) => instance.invoke("versionVersionGet")({}));
+              .then((instance) => instance.invoke("version")({}));
           } catch {
             await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -224,7 +227,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
           mutations.SET_ENGINE_STATE({ engineId, engineState: "STARTING" });
           try {
             return window.backend.restartEngine(engineId);
-          } catch (e) {
+          } catch {
             error(`Failed to restart engine: ${engineId}`);
             await actions.DETECTED_ENGINE_ERROR({ engineId });
             return {
@@ -235,7 +238,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
         }),
       );
 
-      await actions.GET_ONLY_ENGINE_INFOS({ engineIds });
+      await actions.PULL_ENGINE_INFOS({ engineIds });
 
       const result = await actions.POST_ENGINE_START({
         engineIds,
@@ -247,7 +250,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
 
   POST_ENGINE_START: {
     async action({ state, actions }, { engineIds }) {
-      await actions.GET_ALT_PORT_INFOS();
+      await actions.PULL_ALT_PORT_INFOS();
       const result = await Promise.all(
         engineIds.map(async (engineId) => {
           if (state.engineStates[engineId] === "STARTING") {
@@ -261,7 +264,15 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
 
           await actions.LOAD_DEFAULT_STYLE_IDS();
           await actions.CREATE_ALL_DEFAULT_PRESET();
+          // 新しくインストールされた音声合成モデル内話者の UUID が userCharacterOrder にまだ登録されていない場合、
+          // CharacterButton 内メニューで新しい話者が一番上に表示されて煩わしいため、ここで新しい話者の UUID を userCharacterOrder の末尾に登録する
+          // VOICEVOX では新しいキャラクターがいる場合は常に CharacterOrderDialog が開かれ、そこを閉じた際に新しいキャラクターの
+          // 並び替え情報が登録されるため問題にならなかったが、AivisSpeech では追加キャラクター表示を行わないため、明示的にこの処理が必要になる
           const newCharacters = await actions.GET_NEW_CHARACTERS();
+          if (newCharacters.length > 0) {
+            const newUserCharacterOrder = [...state.userCharacterOrder, ...newCharacters];
+            await actions.SET_USER_CHARACTER_ORDER(newUserCharacterOrder);
+          }
           const result = {
             success: state.engineStates[engineId] === "READY",
             anyNewCharacters: newCharacters.length > 0,
@@ -334,7 +345,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
           engineId,
         })
         .then((instance) =>
-          instance.invoke("isInitializedSpeakerIsInitializedSpeakerGet")({
+          instance.invoke("isInitializedSpeaker")({
             speaker: styleId,
           }),
         );
@@ -354,7 +365,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
             engineId,
           })
           .then((instance) =>
-            instance.invoke("initializeSpeakerInitializeSpeakerPost")({
+            instance.invoke("initializeSpeaker")({
               speaker: styleId,
             }),
           );
@@ -368,11 +379,13 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
       }
     },
   },
+
   VALIDATE_ENGINE_DIR: {
     action: async (_, { engineDir }) => {
       return window.backend.validateEngineDir(engineDir);
     },
   },
+
   ADD_ENGINE_DIR: {
     action: async (_, { engineDir }) => {
       const registeredEngineDirs = await window.backend.getSetting(
@@ -384,6 +397,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
       ]);
     },
   },
+
   REMOVE_ENGINE_DIR: {
     action: async (_, { engineDir }) => {
       const registeredEngineDirs = await window.backend.getSetting(
@@ -395,16 +409,19 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
       );
     },
   },
+
   INSTALL_VVPP_ENGINE: {
     action: async (_, path) => {
       return window.backend.installVvppEngine(path);
     },
   },
+
   UNINSTALL_VVPP_ENGINE: {
     action: async (_, engineId) => {
       return window.backend.uninstallVvppEngine(engineId);
     },
   },
+
   SET_ENGINE_MANIFEST: {
     mutation(
       state,
@@ -428,9 +445,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
           .INSTANTIATE_ENGINE_CONNECTOR({
             engineId,
           })
-          .then((instance) =>
-            instance.invoke("engineManifestEngineManifestGet")({}),
-          ),
+          .then((instance) => instance.invoke("engineManifest")({})),
       });
     },
   },
@@ -451,8 +466,7 @@ export const engineStore = createPartialStore<EngineStoreTypes>({
           engineId,
         })
         .then(
-          async (instance) =>
-            await instance.invoke("supportedDevicesSupportedDevicesGet")({}),
+          async (instance) => await instance.invoke("supportedDevices")({}),
         );
 
       mutations.SET_ENGINE_SUPPORTED_DEVICES({

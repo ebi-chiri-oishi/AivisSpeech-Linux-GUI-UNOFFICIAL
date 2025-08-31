@@ -5,10 +5,10 @@
 
 import { uuid4 } from "@/helpers/random";
 import {
-  AddUserDictWordUserDictWordPostRequest,
+  AddUserDictWordRequest,
   DefaultApiInterface,
-  DeleteUserDictWordUserDictWordWordUuidDeleteRequest,
-  RewriteUserDictWordUserDictWordWordUuidPutRequest,
+  DeleteUserDictWordRequest,
+  UpdateUserDictWordRequest,
   UserDictWord,
 } from "@/openapi";
 import { Brand } from "@/type/utility";
@@ -16,11 +16,9 @@ import { Brand } from "@/type/utility";
 type UserDictWordId = Brand<string, "UserDictWordId">;
 
 /** 単語追加リクエストで送られる断片的な単語情報からUserDictWordを作成する */
-function createWord(
-  wordProperty: AddUserDictWordUserDictWordPostRequest,
-): UserDictWord {
+function createWord(wordProperty: AddUserDictWordRequest): UserDictWord {
   return {
-    surface: wordProperty.surface,
+    surface: wordProperty.surface.join(""),
     pronunciation: wordProperty.pronunciation,
     accentType: wordProperty.accentType,
     partOfSpeech: "名詞",
@@ -29,7 +27,7 @@ function createWord(
     partOfSpeechDetail3: "*",
     inflectionalType: "*",
     inflectionalForm: "*",
-    stem: "*",
+    stem: wordProperty.surface,
     yomi: wordProperty.pronunciation,
     priority: wordProperty.priority ?? 5,
     accentAssociativeRule: "*",
@@ -52,7 +50,7 @@ export class DictMock {
    */
   applyDict(text: string): string {
     for (const word of this.userDictWords.values()) {
-      text = text.replace(new RegExp(word.surface, "g"), word.pronunciation);
+      text = text.replace(new RegExp(word.surface, "g"), word.pronunciation.join(""));
     }
     return text;
   }
@@ -60,37 +58,31 @@ export class DictMock {
   /** 辞書系のOpenAPIの関数を返す */
   createDictMockApi(): Pick<
     DefaultApiInterface,
-    | "getUserDictWordsUserDictGet"
-    | "addUserDictWordUserDictWordPost"
-    | "rewriteUserDictWordUserDictWordWordUuidPut"
-    | "deleteUserDictWordUserDictWordWordUuidDelete"
+    | "getUserDictWords"
+    | "addUserDictWord"
+    | "updateUserDictWord"
+    | "deleteUserDictWord"
   > {
     return {
-      getUserDictWordsUserDictGet: async (): Promise<{
+      getUserDictWords: async (): Promise<{
         [key: UserDictWordId]: UserDictWord;
       }> => {
         return Object.fromEntries(this.userDictWords.entries());
       },
 
-      addUserDictWordUserDictWordPost: async (
-        payload: AddUserDictWordUserDictWordPostRequest,
-      ) => {
+      addUserDictWord: async (payload: AddUserDictWordRequest) => {
         const id = uuid4() as UserDictWordId;
         const word = createWord(payload);
         this.userDictWords.set(id, word);
         return id;
       },
 
-      rewriteUserDictWordUserDictWordWordUuidPut: async (
-        payload: RewriteUserDictWordUserDictWordWordUuidPutRequest,
-      ) => {
+      updateUserDictWord: async (payload: UpdateUserDictWordRequest) => {
         const word = createWord(payload);
         this.userDictWords.set(payload.wordUuid as UserDictWordId, word);
       },
 
-      deleteUserDictWordUserDictWordWordUuidDelete: async (
-        payload: DeleteUserDictWordUserDictWordWordUuidDeleteRequest,
-      ) => {
+      deleteUserDictWord: async (payload: DeleteUserDictWordRequest) => {
         this.userDictWords.delete(payload.wordUuid as UserDictWordId);
       },
     };

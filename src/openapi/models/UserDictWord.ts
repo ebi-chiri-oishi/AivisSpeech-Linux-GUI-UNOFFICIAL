@@ -13,8 +13,17 @@
  */
 
 import { exists, mapValues } from '../runtime';
+import type { WordTypes } from './WordTypes';
+import {
+    WordTypesFromJSON,
+    WordTypesFromJSONTyped,
+    WordTypesToJSON,
+} from './WordTypes';
+
 /**
- * 辞書のビルドに使われる情報
+ * ユーザー辞書のビルドに必要な単語情報。
+ * 
+ * 単語登録・変更リクエストで受け取った単語情報のバリデーションと JSON への保存に用いる。
  * @export
  * @interface UserDictWord
  */
@@ -32,7 +41,7 @@ export interface UserDictWord {
      */
     priority: number;
     /**
-     * 文脈ID
+     * 文脈 ID
      * @type {number}
      * @memberof UserDictWord
      */
@@ -62,6 +71,12 @@ export interface UserDictWord {
      */
     partOfSpeechDetail3: string;
     /**
+     * 品詞種別
+     * @type {WordTypes}
+     * @memberof UserDictWord
+     */
+    wordType?: WordTypes;
+    /**
      * 活用型
      * @type {string}
      * @memberof UserDictWord
@@ -75,34 +90,34 @@ export interface UserDictWord {
     inflectionalForm: string;
     /**
      * 原形
-     * @type {string}
+     * @type {Array<string>}
      * @memberof UserDictWord
      */
-    stem: string;
+    stem: Array<string>;
     /**
      * 読み
-     * @type {string}
+     * @type {Array<string>}
      * @memberof UserDictWord
      */
-    yomi: string;
+    yomi: Array<string>;
     /**
      * 発音
-     * @type {string}
+     * @type {Array<string>}
      * @memberof UserDictWord
      */
-    pronunciation: string;
+    pronunciation: Array<string>;
     /**
      * アクセント型
-     * @type {number}
+     * @type {Array<number>}
      * @memberof UserDictWord
      */
-    accentType: number;
+    accentType: Array<number>;
     /**
      * モーラ数
-     * @type {number}
+     * @type {Array<number>}
      * @memberof UserDictWord
      */
-    moraCount?: number;
+    moraCount?: Array<number>;
     /**
      * アクセント結合規則
      * @type {string}
@@ -150,6 +165,7 @@ export function UserDictWordFromJSONTyped(json: any, ignoreDiscriminator: boolea
         'partOfSpeechDetail1': json['part_of_speech_detail_1'],
         'partOfSpeechDetail2': json['part_of_speech_detail_2'],
         'partOfSpeechDetail3': json['part_of_speech_detail_3'],
+        'wordType': !exists(json, 'word_type') ? undefined : WordTypesFromJSON(json['word_type']),
         'inflectionalType': json['inflectional_type'],
         'inflectionalForm': json['inflectional_form'],
         'stem': json['stem'],
@@ -177,6 +193,7 @@ export function UserDictWordToJSON(value?: UserDictWord | null): any {
         'part_of_speech_detail_1': value.partOfSpeechDetail1,
         'part_of_speech_detail_2': value.partOfSpeechDetail2,
         'part_of_speech_detail_3': value.partOfSpeechDetail3,
+        'word_type': WordTypesToJSON(value.wordType),
         'inflectional_type': value.inflectionalType,
         'inflectional_form': value.inflectionalForm,
         'stem': value.stem,

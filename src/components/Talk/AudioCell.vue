@@ -45,7 +45,7 @@
       {{ textLineNumberIndex }}
     </div>
     <CharacterButton
-      v-model:selected-voice="selectedVoice"
+      v-model:selectedVoice="selectedVoice"
       :characterInfos="userOrderedCharacterInfos"
       :loading="isInitializingSpeaker"
       :showEngineInfo="isMultipleEngine"
@@ -137,6 +137,8 @@ const emit = defineEmits<{
     e: "focusCell",
     payload: { audioKey: AudioKey; focusTarget?: "textField" | "root" },
   ): void;
+  // テキスト欄の複製を TalkEditor に依頼するためのイベント
+  (e: "duplicateCell", payload: { audioKey: AudioKey }): void;
 }>();
 
 defineExpose({
@@ -549,6 +551,7 @@ const contextMenudata = ref<
     MenuItemButton,
     MenuItemSeparator,
     MenuItemButton,
+    MenuItemButton,
   ]
 >([
   // NOTE: audioTextBuffer.value の変更が nativeEl.value に反映されるのはnextTick。
@@ -601,18 +604,38 @@ const contextMenudata = ref<
   { type: "separator" },
   {
     type: "button",
-    label: "読みを変えずに適用",
+    label: "テキスト欄を複製",
     onClick: async () => {
       contextMenu.value?.hide();
-      isChangeFlag.value = false;
-      await store.actions.COMMAND_CHANGE_DISPLAY_TEXT({
-        audioKey: props.audioKey,
-        text: audioTextBuffer.value,
-      });
-      textField.value?.blur();
+      // TalkEditor に複製を依頼
+      emit("duplicateCell", { audioKey: props.audioKey });
     },
     disableWhenUiLocked: true,
   },
+  {
+    type: "button",
+    label: "テキスト欄を削除",
+    onClick: async () => {
+      contextMenu.value?.hide();
+      void removeCell();
+    },
+    disableWhenUiLocked: true,
+  },
+  // { type: "separator" },
+  // {
+  //   type: "button",
+  //   label: "読みを変えずに適用",
+  //   onClick: async () => {
+  //     contextMenu.value?.hide();
+  //     isChangeFlag.value = false;
+  //     await store.actions.COMMAND_CHANGE_DISPLAY_TEXT({
+  //       audioKey: props.audioKey,
+  //       text: audioTextBuffer.value,
+  //     });
+  //     textField.value?.blur();
+  //   },
+  //   disableWhenUiLocked: true,
+  // },
 ]);
 /**
  * コンテキストメニューの開閉によりFocusやBlurが発生する可能性のある間は`true`。

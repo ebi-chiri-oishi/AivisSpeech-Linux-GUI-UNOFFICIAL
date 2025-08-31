@@ -21,14 +21,10 @@
                   ></QAvatar>
                 </QItemSection>
                 <QItemSection>
-                  <QItemLabel>プリセット新規登録</QItemLabel>
+                  <QItemLabel>プリセットを新規登録</QItemLabel>
                 </QItemSection>
               </QItem>
-              <QItem
-                v-close-popup
-                clickable
-                @click="showsPresetEditDialog = true"
-              >
+              <QItem v-close-popup clickable @click="openPresetManageDialog()">
                 <QItemSection avatar>
                   <QAvatar
                     icon="sym_r_edit_note"
@@ -37,7 +33,7 @@
                   ></QAvatar>
                 </QItemSection>
                 <QItemSection>
-                  <QItemLabel>プリセット管理</QItemLabel>
+                  <QItemLabel>プリセットを編集</QItemLabel>
                 </QItemSection>
               </QItem>
             </QList>
@@ -85,14 +81,12 @@
           @click="registerPreset({ overwrite: isRegisteredPreset })"
         />
       </div>
-      <!-- プリセット管理ダイアログ -->
-      <PresetManageDialog v-model:open-dialog="showsPresetEditDialog" />
 
       <!-- プリセット登録ダイアログ -->
       <QDialog v-model="showsPresetNameDialog" @beforeHide="closeAllDialog">
         <QCard class="q-pa-sm" style="min-width: 350px">
           <QCardSection>
-            <div class="text-h6">プリセット登録</div>
+            <div class="text-h6">現在のパラメータでプリセットを登録</div>
           </QCardSection>
 
           <QForm @submit.prevent="checkRewritePreset">
@@ -238,7 +232,7 @@
       <span class="text-body1 q-mb-xs"><b>モーフィング</b></span>
       <div class="row no-wrap items-center q-mt-sm">
         <CharacterButton
-          v-model:selected-voice="morphingTargetVoice"
+          v-model:selectedVoice="morphingTargetVoice"
           class="q-my-xs"
           :characterInfos="morphingTargetCharacters"
           :showEngineInfo="morphingTargetEngines.length >= 2"
@@ -324,7 +318,6 @@
 import { computed, ref, watchEffect } from "vue";
 import { QSelectProps } from "quasar";
 import CharacterButton from "@/components/CharacterButton.vue";
-import PresetManageDialog from "@/components/Dialog/PresetManageDialog.vue";
 import { useStore } from "@/store";
 
 import {
@@ -344,7 +337,7 @@ import {
 import { EngineManifest } from "@/openapi";
 import { useDefaultPreset } from "@/composables/useDefaultPreset";
 import { SLIDER_PARAMETERS } from "@/store/utility";
-import { createLogger } from "@/domain/frontend/log";
+import { createLogger } from "@/helpers/log";
 
 const props = defineProps<{
   activeAudioKey: AudioKey;
@@ -418,21 +411,21 @@ const parameterConfigs = computed<ParameterConfig[]>(() => [
     key: "speedScale",
   },
   {
-    // 「スタイルの強さ」は AivisSpeech Engine 以外の音声合成エンジンでは「抑揚」と表示
+    // 「感情表現の強さ」は AivisSpeech Engine 以外の音声合成エンジンでは「抑揚」と表示
     label:
       audioItem.value.voice.engineId === store.getters.DEFAULT_ENGINE_ID
-        ? "スタイルの強さ"
+        ? "感情表現の強さ"
         : "抑揚",
     tooltip:
       audioItem.value.voice.engineId === store.getters.DEFAULT_ENGINE_ID
-        ? "話者スタイルの声色の強弱を調整できます\n" +
-          "強くするとよりそのスタイルに近い抑揚がついた声になります\n" +
-          "強くしすぎるとスタイル次第では棒読みになるため注意\n" +
-          "（ノーマルスタイルでは変更できません）"
+        ? "選択した話者スタイルの感情表現の強弱を調整できます\n" +
+          "強くするとよりその話者スタイルに近い感情表現が込められた声になります\n" +
+          "強くしすぎると話者やスタイル次第では棒読みで不自然な声になるため注意\n" +
+          "（ノーマルスタイルでは自動で適切な感情表現が選択されるため変更できません）"
         : "抑揚の強弱を調整できます",
     sliderProps: {
       modelValue: () => query.value?.intonationScale ?? null,
-      // デフォルトスタイルでは「スタイルの強さ」は効果がないので無効化
+      // デフォルトスタイルでは「感情表現の強さ」は効果がないので無効化
       disable: () =>
         uiLocked.value ||
         !supportedFeatures.value?.adjustIntonationScale ||
@@ -966,7 +959,7 @@ const presetPartsFromParameter = computed<Omit<Preset, "name">>(() => {
   )
     throw new Error("slider value is null");
 
-  return {
+  const result = {
     ...parameters.value.reduce(
       (acc, parameter) => ({
         ...acc,
@@ -989,6 +982,14 @@ const presetPartsFromParameter = computed<Omit<Preset, "name">>(() => {
         }
         : undefined,
   };
+
+  // AivisSpeech Engine では「間の長さ」(pauseLengthScale) に対応していないので、デフォルトで1を設定
+  // Zod 側の型定義も pauseLengthScale: z.number().default(1) に変更してはいるが、念のため
+  if (result.pauseLengthScale == undefined) {
+    result.pauseLengthScale = 1;
+  }
+
+  return result;
 });
 
 const createPresetData = (name: string): Preset => {
@@ -1033,7 +1034,11 @@ const updatePreset = async (fullApply: boolean) => {
 };
 
 // プリセットの編集
-const showsPresetEditDialog = ref(false);
+const openPresetManageDialog = () => {
+  void store.actions.SET_DIALOG_OPEN({
+    isPresetManageDialogOpen: true,
+  });
+};
 
 const adjustSliderValue = (
   inputItemName: string,

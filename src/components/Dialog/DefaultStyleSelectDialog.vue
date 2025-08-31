@@ -1,6 +1,6 @@
 <template>
   <QDialog
-    v-model="isOpenComputed"
+    v-model="dialogOpened"
     maximized
     transitionShow="none"
     transitionHide="none"
@@ -18,7 +18,7 @@
             @click="closeDialog"
           />
           <QToolbarTitle class="text-display">
-            デフォルトスタイル -
+            デフォルトスタイルの設定 -
             {{ characterInfo.metas.speakerName }}
           </QToolbarTitle>
         </QToolbar>
@@ -55,9 +55,12 @@
               >
                 <div class="style-item-inner">
                   <img :src="style.iconPath" class="style-icon" />
-                  <span class="text-subtitle1 q-ma-sm" style="font-weight: bold;">{{
-                    style.styleName || DEFAULT_STYLE_NAME
-                  }}</span>
+                  <span
+                    class="text-subtitle1 q-ma-sm"
+                    style="font-weight: bold; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;"
+                  >
+                    {{ style.styleName || DEFAULT_STYLE_NAME }}
+                  </span>
                   <div class="voice-samples">
                     <QBtn
                       v-for="voiceSampleIndex of [
@@ -122,14 +125,14 @@ import {
   StyleInfo,
 } from "@/type/preload";
 
+const dialogOpened = defineModel<boolean>("dialogOpened", { default: false });
+
 const props = defineProps<{
-  isOpen: boolean;
   selectedStyleIndex: number;
   characterInfo: CharacterInfo;
 }>();
 
 const emit = defineEmits<{
-  (e: "update:isOpen", value: boolean): void;
   (e: "update:selectedStyleIndex", value: number): void;
 }>();
 
@@ -137,18 +140,13 @@ const emit = defineEmits<{
 
 const store = useStore();
 
-const isOpenComputed = computed({
-  get: () => props.isOpen,
-  set: (val) => emit("update:isOpen", val),
-});
-
 const firstSelectedStyleIndex = ref(0);
 const isModified = computed(() => {
   return firstSelectedStyleIndex.value !== props.selectedStyleIndex;
 });
 
 // ダイアログが開かれたときに初期値を求める
-watch([() => props.isOpen], async ([newValue]) => {
+watch([dialogOpened], async ([newValue]) => {
   if (newValue) {
     firstSelectedStyleIndex.value = props.selectedStyleIndex;
   }
@@ -228,7 +226,7 @@ const closeDialog = () => {
   ]);
 
   stop();
-  isOpenComputed.value = false;
+  dialogOpened.value = false;
 };
 </script>
 
