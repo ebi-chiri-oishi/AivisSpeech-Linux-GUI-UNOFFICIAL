@@ -1,4 +1,7 @@
 # AivisSpeech-Linux-GUI-UNOFFICIAL
+# お知らせ
+上流の1.1.0でLinuxのAppImageが公開されたためこのリポジトリはアーカイブされました。今後は上流のAppImageをご利用ください。
+This repository has been archived as the Linux AppImage for upstream 1.1.0 has been released. Please use the upstream AppImage going forward.
 
 [リリース Releases](https://github.com/ebi-chiri-oishi/AivisSpeech-Linux-GUI-UNOFFICIAL/releases/tag/release)
 
